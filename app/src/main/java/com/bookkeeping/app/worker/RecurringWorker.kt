@@ -13,6 +13,7 @@ import androidx.work.WorkerParameters
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
+import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.InstallmentPlan
 import com.bookkeeping.app.data.entity.RecurringItem
@@ -80,6 +81,9 @@ class RecurringWorker(
 
         // 2. 处理信用卡账单分期
         processInstallments(db, now)
+
+        // 3. 预算超支检查（每自然月最多提醒一次）
+        checkBudgetAndNotify(applicationContext)
 
         scheduleNext(applicationContext, db)
         return Result.success()

@@ -23,7 +23,21 @@ class ParseEngine(
     ): Transaction? {
         val text = rawText.trim()
         if (text.isBlank()) return null
+        // 整体兜底：用户配置的规则/正则非法时绝不能让通知服务崩溃
+        return try {
+            parseInternal(text, sourcePackage, sourceSender, sourceChannel, occurredAt)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
+    private fun parseInternal(
+        text: String,
+        sourcePackage: String?,
+        sourceSender: String?,
+        sourceChannel: String,
+        occurredAt: Long
+    ): Transaction? {
         // 1. 匹配规则（按 priority 从高到低）
         val matched = rules.firstOrNull { it.isEnabled && matchRule(it, text, sourcePackage, sourceSender) }
 
@@ -71,38 +85,34 @@ class ParseEngine(
     // ─── 字段提取 ──────────────────────────────────────────────
 
     private fun extractAmount(text: String, rule: ParseRule?): Double? {
-        val patterns = buildList {
-            // 优先用规则里的
-            if (rule != null) add(rule.patternAmount)
-            // 通用兜底模式
-            add("""[¥￥]\s*([\d,]+\.\d{1,2})""")           // ¥1,234.56 或 ￥1234.56
-            add("""[¥￥]\s*(\d+(?:\.\d{1,2})?)""")         // ¥5 或 ¥5.00
-            add("""人民币\s*([\d,]+\.\d{1,2})""")           // 人民币1,234.56
-            add("""人民币\s*(\d+(?:\.\d{1,2})?)""")         // 人民币5
-            add("""金额[：:]\s*([\d,]+\.\d{1,2})""")        // 金额：1234.56
-            add("""金额[：:]\s*(\d+(?:\.\d{1,2})?)""")      // 金额：5
-            add("""([\d,]+\.\d{1,2})\s*元""")               // 1234.56元
-            add("""(\d+(?:\.\d{1,2})?)\s*元""")             // 5元
-            // 微信/支付宝消费可能有 "付款 ¥XX"
-            add("""(?:付款|支付|消费)[^¥￥]{0,5}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
-        }
-        for (p in patterns) {
-            val match = Regex(p).find(text)
-            if (match != null) {
-                val num = match.groupValues[1].replace(",", "").toDoubleOrNull()
-                if (num != null && num > 0) return num
+        // 优先用规则里的（安全编译，非法正则跳过）
+        if (rule != null) {
+            safeRegex(rule.patternAmount)?.let { re ->
+                findAmount(re, text)?.let { return it }
             }
+        }
+        // 通用兜底模式（预编译，高频路径不重复编译）
+        for (re in COMMON_AMOUNT_REGEXES) {
+            findAmount(re, text)?.let { return it }
         }
         return null
     }
 
+    /** 取第一个非空捕获组作为金额（兼容多分支 alternation 模式） */
+    private fun findAmount(re: Regex, text: String): Double? {
+        val match = re.find(text) ?: return null
+        val raw = match.groupValues.firstOrNull { it.isNotEmpty() } ?: return null
+        val num = raw.replace(",", "").toDoubleOrNull()
+        return if (num != null && num > 0) num else null
+    }
+
     private fun extractFirst(text: String, pattern: String): String {
-        val match = Regex(pattern).find(text) ?: return ""
+        val match = safeRegex(pattern)?.find(text) ?: return ""
         return match.groupValues.getOrNull(1) ?: match.value
     }
 
     private fun extractTime(text: String, pattern: String): Long {
-        val match = Regex(pattern).find(text) ?: return System.currentTimeMillis()
+        val match = safeRegex(pattern)?.find(text) ?: return System.currentTimeMillis()
         // 简单处理：直接返回匹配文本作为时间（实际应该 parse 成时间戳）
         // 先返回当前时间，后续有需要再增强
         return System.currentTimeMillis()
@@ -111,17 +121,17 @@ class ParseEngine(
     // ─── 类型判断 ──────────────────────────────────────────────
 
     private fun determineType(text: String, rule: ParseRule?): Transaction.Type {
-        // 先从规则判断
+        // 先从规则判断（安全编译，非法正则跳过该项）
         if (rule != null) {
-            if (Regex(rule.patternExpense).containsMatchIn(text)) return Transaction.Type.EXPENSE
-            if (Regex(rule.patternIncome).containsMatchIn(text)) return Transaction.Type.INCOME
-            if (Regex(rule.patternTransfer).containsMatchIn(text)) return Transaction.Type.TRANSFER
+            if (safeRegex(rule.patternExpense)?.containsMatchIn(text) == true) return Transaction.Type.EXPENSE
+            if (safeRegex(rule.patternIncome)?.containsMatchIn(text) == true) return Transaction.Type.INCOME
+            if (safeRegex(rule.patternTransfer)?.containsMatchIn(text) == true) return Transaction.Type.TRANSFER
         }
-        // 通用兜底
+        // 通用兜底（预编译）
         return when {
-            Regex("""收入|入账|汇款转入|转入|到账|退款|获得""").containsMatchIn(text) -> Transaction.Type.INCOME
-            Regex("""转账|互联汇出|互联汇入""").containsMatchIn(text) -> Transaction.Type.TRANSFER
-            Regex("""支出|消费|扣款|支付|汇出|转出|付款|扣费|还款""").containsMatchIn(text) -> Transaction.Type.EXPENSE
+            COMMON_INCOME_REGEX.containsMatchIn(text) -> Transaction.Type.INCOME
+            COMMON_TRANSFER_REGEX.containsMatchIn(text) -> Transaction.Type.TRANSFER
+            COMMON_EXPENSE_REGEX.containsMatchIn(text) -> Transaction.Type.EXPENSE
             else -> Transaction.Type.EXPENSE  // 默认支出
         }
     }
@@ -175,6 +185,30 @@ class ParseEngine(
     // ─── 预定义规则库 ──────────────────────────────────────────
 
     companion object {
+        /** 安全编译正则：非法 pattern 返回 null 而不是抛异常 */
+        private fun safeRegex(pattern: String?): Regex? =
+            if (pattern.isNullOrBlank()) null
+            else try { Regex(pattern) } catch (e: Exception) { null }
+
+        /** 通用金额兜底模式（预编译，避免每条通知重复编译正则） */
+        private val COMMON_AMOUNT_REGEXES: List<Regex> = listOf(
+            Regex("""[¥￥]\s*([\d,]+\.\d{1,2})"""),           // ¥1,234.56 或 ￥1234.56
+            Regex("""[¥￥]\s*(\d+(?:\.\d{1,2})?)"""),         // ¥5 或 ¥5.00
+            Regex("""人民币\s*([\d,]+\.\d{1,2})"""),           // 人民币1,234.56
+            Regex("""人民币\s*(\d+(?:\.\d{1,2})?)"""),         // 人民币5
+            Regex("""金额[：:]\s*([\d,]+\.\d{1,2})"""),        // 金额：1234.56
+            Regex("""金额[：:]\s*(\d+(?:\.\d{1,2})?)"""),      // 金额：5
+            Regex("""([\d,]+\.\d{1,2})\s*元"""),               // 1234.56元
+            Regex("""(\d+(?:\.\d{1,2})?)\s*元"""),             // 5元
+            // 微信/支付宝消费可能有 "付款 ¥XX"
+            Regex("""(?:付款|支付|消费)[^¥￥]{0,5}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
+        )
+
+        /** 通用类型判断正则（预编译） */
+        private val COMMON_INCOME_REGEX = Regex("""收入|入账|汇款转入|转入|到账|退款|获得""")
+        private val COMMON_TRANSFER_REGEX = Regex("""转账|互联汇出|互联汇入""")
+        private val COMMON_EXPENSE_REGEX = Regex("""支出|消费|扣款|支付|汇出|转出|付款|扣费|还款""")
+
         /** 预定义正则规则（硬编码在代码里，后续可迁移到 DB 让用户配置） */
         val DEFAULT_RULES: List<ParseRule> = listOf(
 

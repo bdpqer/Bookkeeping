@@ -14,6 +14,7 @@ import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.parser.ParseEngine
 import com.bookkeeping.app.receiver.SmsContentObserver
+import com.bookkeeping.app.worker.AutoBackupWorker
 import com.bookkeeping.app.worker.RecurringWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,7 @@ class BookkeepingApp : Application() {
         seedDefaultsIfNeeded()
         seedMerchantRulesIfNeeded()
         RecurringWorker.triggerNow(this)
+        AutoBackupWorker.ensureScheduled(this)
     }
 
     /** 首次启动初始化默认商家分类规则 */

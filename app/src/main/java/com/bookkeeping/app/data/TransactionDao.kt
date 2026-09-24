@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.bookkeeping.app.data.entity.Transaction
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
@@ -19,7 +20,14 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
     suspend fun getAll(): List<Transaction>
 
-    @Query("SELECT * FROM transactions WHERE deletedAt = 0 ORDER BY occurredAt DESC")
+    /** Flow 变体：数据库变化自动重发，供首页/明细页 collectAsState 实时刷新 */
+    @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    fun observeAll(): Flow<List<Transaction>>
+
+    @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    fun observeByLedger(ledgerId: Long): Flow<List<Transaction>>
+
+    @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
     suspend fun getAllIncludingUnconfirmed(): List<Transaction>
 
     @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC LIMIT :limit")
@@ -61,6 +69,16 @@ interface TransactionDao {
     """)
     suspend fun search(keyword: String): List<Transaction>
 
+    /** Flow 变体：明细页搜索 */
+    @Query("""
+        SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0
+          AND (merchant LIKE '%' || :keyword || '%'
+               OR note LIKE '%' || :keyword || '%'
+               OR rawText LIKE '%' || :keyword || '%')
+        ORDER BY occurredAt DESC
+    """)
+    fun observeSearch(keyword: String): Flow<List<Transaction>>
+
     /** 按账本 + 关键词搜索 */
     @Query("""
         SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 AND ledgerId = :ledgerId
@@ -71,14 +89,37 @@ interface TransactionDao {
     """)
     suspend fun searchByLedger(ledgerId: Long, keyword: String): List<Transaction>
 
+    /** Flow 变体：明细页按账本 + 关键词搜索 */
     @Query("""
-        SELECT * FROM transactions 
-        WHERE ABS(amount - :amount) < 0.01 
+        SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 AND ledgerId = :ledgerId
+          AND (merchant LIKE '%' || :keyword || '%'
+               OR note LIKE '%' || :keyword || '%'
+               OR rawText LIKE '%' || :keyword || '%')
+        ORDER BY occurredAt DESC
+    """)
+    fun observeSearchByLedger(ledgerId: Long, keyword: String): Flow<List<Transaction>>
+
+    /** 首页搜索弹窗：商户/分类/备注模糊 + 金额前缀，SQL 下推避免全表内存过滤 */
+    @Query("""
+        SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0
+          AND (merchant LIKE '%' || :q || '%'
+               OR category LIKE '%' || :q || '%'
+               OR note LIKE '%' || :q || '%'
+               OR printf('%.2f', amount) LIKE :qFmt || '%')
+        ORDER BY occurredAt DESC
+        LIMIT 30
+    """)
+    suspend fun searchQuick(q: String, qFmt: String): List<Transaction>
+
+    @Query("""
+        SELECT * FROM transactions
+        WHERE ABS(amount - :amount) < 0.01
           AND type = :type
+          AND merchant = :merchant
           AND occurredAt BETWEEN :since AND :until
           AND deletedAt = 0
     """)
-    suspend fun findDuplicate(amount: Double, type: String, since: Long, until: Long): List<Transaction>
+    suspend fun findDuplicate(amount: Double, type: String, merchant: String, since: Long, until: Long): List<Transaction>
 
     @Query("""
         SELECT category, SUM(amount) as total 

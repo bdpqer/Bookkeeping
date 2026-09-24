@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.BookkeepingApp
+import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
@@ -135,10 +136,12 @@ class SmsReceiver : BroadcastReceiver() {
                 if (tx != null) {
                     val since = tx.occurredAt - 5 * 60 * 1000
                     val until = tx.occurredAt + 5 * 60 * 1000
-                    val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, since, until)
+                    val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)
                     if (dupes.isEmpty()) {
                         val id = db.transactionDao().insert(tx)
                         fileLog("✅ 短信解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category}")
+                        // 预算超支检查（每自然月最多提醒一次）
+                        checkBudgetAndNotify(context)
                     } else {
                         fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
                     }

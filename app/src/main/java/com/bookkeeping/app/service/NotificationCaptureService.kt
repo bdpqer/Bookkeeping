@@ -15,6 +15,7 @@ import androidx.glance.appwidget.updateAll
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
+import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
@@ -156,12 +157,14 @@ class NotificationCaptureService : NotificationListenerService() {
                 // 去重：同 5 分钟内、同金额、同类型
                 val since = tx.occurredAt - 5 * 60 * 1000
                 val until = tx.occurredAt + 5 * 60 * 1000
-                val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, since, until)
+                val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)
                 if (dupes.isEmpty()) {
                     val id = db.transactionDao().insert(tx)
                     fileLog("✅ 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}")
                     // 刷新桌面 Widget
                     com.bookkeeping.app.widget.BookkeepingWidget().updateAll(this@NotificationCaptureService)
+                    // 预算超支检查（每自然月最多提醒一次）
+                    checkBudgetAndNotify(this@NotificationCaptureService)
                 } else {
                     fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
                 }
