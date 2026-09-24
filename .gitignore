@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.kotlin/
+
+# Android Studio / SDK 本地配置（含本机 SDK 路径，勿提交）
+local.properties
+
+# 签名文件（勿提交）
+*.jks
+*.keystore
+
+# 日志与临时文件
+*.log
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/

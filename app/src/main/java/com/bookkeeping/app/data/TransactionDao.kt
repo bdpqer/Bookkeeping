@@ -1,0 +1,159 @@
+package com.bookkeeping.app.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import com.bookkeeping.app.data.entity.Transaction
+
+@Dao
+interface TransactionDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(tx: Transaction): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfNew(tx: Transaction): Long
+
+    @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getAll(): List<Transaction>
+
+    @Query("SELECT * FROM transactions WHERE deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getAllIncludingUnconfirmed(): List<Transaction>
+
+    @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<Transaction>
+
+    @Query("SELECT * FROM transactions WHERE occurredAt BETWEEN :start AND :end AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getByTimeRange(start: Long, end: Long): List<Transaction>
+
+    /** 按账本查 */
+    @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getByLedger(ledgerId: Long): List<Transaction>
+
+    /** 按账户查 */
+    @Query("SELECT * FROM transactions WHERE accountId = :accountId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getByAccount(accountId: Long): List<Transaction>
+
+    /** 待确认队列：confirmed = false */
+    @Query("SELECT * FROM transactions WHERE confirmed = 0 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getPending(): List<Transaction>
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE confirmed = 0 AND deletedAt = 0")
+    suspend fun getPendingCount(): Int
+
+    /** 确认入账 */
+    @Query("UPDATE transactions SET confirmed = 1 WHERE id = :id")
+    suspend fun confirm(id: Long)
+
+    /** 批量确认 */
+    @Query("UPDATE transactions SET confirmed = 1 WHERE confirmed = 0")
+    suspend fun confirmAll()
+
+    /** 关键词搜索（商户/备注/原始文本） */
+    @Query("""
+        SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0
+          AND (merchant LIKE '%' || :keyword || '%' 
+               OR note LIKE '%' || :keyword || '%'
+               OR rawText LIKE '%' || :keyword || '%')
+        ORDER BY occurredAt DESC
+    """)
+    suspend fun search(keyword: String): List<Transaction>
+
+    /** 按账本 + 关键词搜索 */
+    @Query("""
+        SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 AND ledgerId = :ledgerId
+          AND (merchant LIKE '%' || :keyword || '%'
+               OR note LIKE '%' || :keyword || '%'
+               OR rawText LIKE '%' || :keyword || '%')
+        ORDER BY occurredAt DESC
+    """)
+    suspend fun searchByLedger(ledgerId: Long, keyword: String): List<Transaction>
+
+    @Query("""
+        SELECT * FROM transactions 
+        WHERE ABS(amount - :amount) < 0.01 
+          AND type = :type
+          AND occurredAt BETWEEN :since AND :until
+          AND deletedAt = 0
+    """)
+    suspend fun findDuplicate(amount: Double, type: String, since: Long, until: Long): List<Transaction>
+
+    @Query("""
+        SELECT category, SUM(amount) as total 
+        FROM transactions 
+        WHERE type = :type AND confirmed = 1 AND deletedAt = 0 AND occurredAt BETWEEN :start AND :end 
+        GROUP BY category
+    """)
+    suspend fun sumByCategory(type: String, start: Long, end: Long): List<CategorySum>
+
+    @Query("""
+        SELECT CAST((occurredAt / 86400000) AS INTEGER) as dayBucket,
+               SUM(CASE WHEN type = :expenseType THEN amount ELSE 0 END) as expense,
+               SUM(CASE WHEN type = :incomeType THEN amount ELSE 0 END) as income
+        FROM transactions
+        WHERE confirmed = 1 AND deletedAt = 0 AND occurredAt BETWEEN :start AND :end
+        GROUP BY dayBucket
+    """)
+    suspend fun sumByDay(
+        expenseType: String,
+        incomeType: String,
+        start: Long,
+        end: Long
+    ): List<DaySum>
+
+    @Query("""
+        SELECT COALESCE(SUM(amount), 0.0) FROM transactions 
+        WHERE type = :type AND confirmed = 1 AND deletedAt = 0 AND occurredAt BETWEEN :start AND :end
+    """)
+    suspend fun sumAmount(type: String, start: Long, end: Long): Double
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE confirmed = 1 AND deletedAt = 0")
+    suspend fun count(): Int
+
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    suspend fun getById(id: Long): Transaction?
+
+    @Update
+    suspend fun update(tx: Transaction)
+
+    @Query("SELECT * FROM transactions WHERE category = :category AND type = :type AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getByCategoryAndType(category: String, type: String): List<Transaction>
+
+    /** 报销相关 */
+    @Query("SELECT * FROM transactions WHERE reimburseStatus = :status AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    suspend fun getReimburseByStatus(status: String): List<Transaction>
+
+    @Query("UPDATE transactions SET reimburseStatus = :status WHERE id = :id")
+    suspend fun updateReimburseStatus(id: Long, status: String)
+
+    @Query("UPDATE transactions SET reimburseStatus = :status WHERE id IN (:ids)")
+    suspend fun batchUpdateReimburseStatus(ids: List<Long>, status: String)
+
+    /** 回收站相关（软删除） */
+    @Query("SELECT * FROM transactions WHERE deletedAt > 0 ORDER BY deletedAt DESC")
+    suspend fun getDeleted(): List<Transaction>
+
+    @Query("UPDATE transactions SET deletedAt = :ts WHERE id = :id")
+    suspend fun softDelete(id: Long, ts: Long)
+
+    @Query("UPDATE transactions SET deletedAt = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
+
+    @Query("DELETE FROM transactions WHERE id = :id AND deletedAt > 0")
+    suspend fun purge(id: Long)
+
+    @Query("DELETE FROM transactions WHERE deletedAt > 0")
+    suspend fun purgeAll()
+
+    /** 清除删除时间早于 cutoff 的记录 */
+    @Query("DELETE FROM transactions WHERE deletedAt > 0 AND deletedAt < :cutoff")
+    suspend fun purgeOlderThan(cutoff: Long)
+
+    @Query("DELETE FROM transactions WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    data class CategorySum(val category: String, val total: Double)
+    data class DaySum(val dayBucket: Long, val expense: Double, val income: Double)
+}

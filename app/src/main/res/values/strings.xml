@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">记账助手</string>
+    <string name="capture_notification_channel_name">自动记账运行中</string>
+    <string name="capture_notification_text">通知监听已开启</string>
+    <string name="widget_description">记账助手桌面小部件：查看今日/本月收支</string>
+</resources>
