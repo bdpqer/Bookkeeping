@@ -20,56 +20,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.EmptyState
+import com.bookkeeping.app.LedgerDropdownTitle
+import com.bookkeeping.app.categoryEmoji
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.DataBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import com.bookkeeping.app.formatAmount
 
 private val reimburseDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 private val monthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-
-/** 顶栏标题：账本下拉列表，默认选中当前账本。id=0 表示「全部账本」 */
-@Composable
-fun LedgerDropdownTitle(
-    ledgers: List<Ledger>,
-    selectedLedgerId: Long,
-    onSelect: (Long) -> Unit
-) {
-    var menu by remember { mutableStateOf(false) }
-    val current = if (selectedLedgerId == 0L) null
-                  else ledgers.firstOrNull { it.id == selectedLedgerId }
-    Box {
-        Row(
-            Modifier.clickable { menu = true },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                current?.let { "${it.icon} ${it.name}" } ?: "📚 全部账本",
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(
-                text = { Text("📚 全部账本") },
-                onClick = { menu = false; onSelect(0L) }
-            )
-            ledgers.forEach { led ->
-                DropdownMenuItem(
-                    text = { Text("${led.icon} ${led.name}") },
-                    onClick = { menu = false; onSelect(led.id) }
-                )
-            }
-        }
-    }
-}
 
 /** 报销管理页 —— 待报销 / 已报销 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -165,19 +130,11 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
             }
 
             if (currentList.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (tab == 0) "🧾" else "✅", fontSize = 48.sp)
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            if (tab == 0) "还没有待报销的支出\n点右上角环形加号「新增」"
-                            else "暂无已报销记录\n点右上角环形加号「新增」",
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+                EmptyState(
+                    if (tab == 0) "🧾" else "✅",
+                    if (tab == 0) "还没有待报销的支出\n点右上角环形加号「新增」"
+                    else "暂无已报销记录\n点右上角环形加号「新增」"
+                )
             } else {
                 val grouped = currentList.groupBy { monthFormat.format(Date(it.occurredAt)) }
                     .toSortedMap(compareByDescending<String> { it })
@@ -221,7 +178,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                 )
                                 Spacer(Modifier.weight(1f))
                                 Text(
-                                    "-¥${"%.2f".format(monthTotal)}",
+                                    "-¥${monthTotal.formatAmount()}",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (tab == 0) Color(0xFFFF9800) else Color(0xFF4CAF50)
@@ -249,7 +206,6 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                             withContext(Dispatchers.IO) {
                                                 db.transactionDao().updateReimburseStatus(tx.id, "DONE")
                                             }
-                                            DataBus.notifyDataChanged()
                                             refresh()
                                         }
                                     },
@@ -258,7 +214,6 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                             withContext(Dispatchers.IO) {
                                                 db.transactionDao().updateReimburseStatus(tx.id, "PENDING")
                                             }
-                                            DataBus.notifyDataChanged()
                                             refresh()
                                         }
                                     },
@@ -267,7 +222,6 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                             withContext(Dispatchers.IO) {
                                                 db.transactionDao().softDelete(tx.id, System.currentTimeMillis())
                                             }
-                                            DataBus.notifyDataChanged()
                                             refresh()
                                         }
                                     }
@@ -301,7 +255,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                 Text("全选", fontSize = 14.sp)
                                 Spacer(Modifier.weight(1f))
                                 Text(
-                                    "合计 ¥${"%.2f".format(selectedTotal)}",
+                                    "合计 ¥${selectedTotal.formatAmount()}",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (selectedIds.isNotEmpty()) Color(0xFFEF6C00)
@@ -315,7 +269,6 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                                 db.transactionDao().batchUpdateReimburseStatus(selectedIds.toList(), "DONE")
                                             }
                                             selectedIds = emptySet()
-                                            DataBus.notifyDataChanged()
                                             refresh()
                                         }
                                     },
@@ -387,7 +340,7 @@ private fun ReimburseItemRow(
         }
     }
 
-    val emoji = categoryEmojiReimburse(tx.category)
+    val emoji = categoryEmoji(tx.category)
     val dateStr = reimburseDateFormat.format(Date(tx.occurredAt))
     val amountColor = if (isPending) Color(0xFFFF9800) else Color(0xFF4CAF50)
     val accountSuffix = accountName?.let { " · $it" } ?: ""
@@ -463,7 +416,7 @@ private fun ReimburseItemRow(
                     }
                 }
                 Text(
-                    "-¥${"%.2f".format(tx.amount)}",
+                    "-¥${tx.amount.formatAmount()}",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = amountColor
@@ -471,20 +424,4 @@ private fun ReimburseItemRow(
             }
         }
     }
-}
-
-private fun categoryEmojiReimburse(category: String): String = when {
-    category.contains("餐饮") -> "🍜"
-    category.contains("饮品") || category.contains("咖啡") -> "☕"
-    category.contains("交通") -> "🚗"
-    category.contains("购物") -> "🛒"
-    category.contains("打车") -> "🚕"
-    category.contains("居住") -> "🏠"
-    category.contains("水电") -> "💡"
-    category.contains("娱乐") -> "🎮"
-    category.contains("医疗") -> "💊"
-    category.contains("学习") -> "📚"
-    category.contains("出差") || category.contains("差旅") -> "✈️"
-    category.contains("报销") -> "🧾"
-    else -> "💰"
 }

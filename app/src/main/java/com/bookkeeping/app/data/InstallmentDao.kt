@@ -22,9 +22,6 @@ interface InstallmentDao {
     @Query("SELECT * FROM installment_plans WHERE status = 'ACTIVE' ORDER BY firstDate ASC")
     suspend fun getActive(): List<InstallmentPlan>
 
-    @Query("SELECT * FROM installment_plans WHERE id = :id")
-    suspend fun getById(id: Long): InstallmentPlan?
-
     @Query("DELETE FROM installment_plans WHERE id = :id")
     suspend fun delete(id: Long)
 }

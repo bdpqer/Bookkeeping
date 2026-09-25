@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.LedgerDropdownTitle
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Receivable
@@ -33,6 +34,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.bookkeeping.app.formatAmount
 
 /** 应收/应付款管理页 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,14 +145,14 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                             val sign = if (tab == 0) "+" else "-"
                             val pendingColor = if (tab == 0) Color(0xFF4CAF50) else Color(0xFFFF9800)
                             Text(
-                                "待处理 ${pendingList.size} 笔 · $sign¥${"%.2f".format(totalPending)}",
+                                "待处理 ${pendingList.size} 笔 · $sign¥${totalPending.formatAmount()}",
                                 fontSize = 13.sp,
                                 color = pendingColor,
                                 fontWeight = FontWeight.Medium
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                "已完成 ${doneList.size} 笔 · ¥${"%.2f".format(totalDone)}",
+                                "已完成 ${doneList.size} 笔 · ¥${totalDone.formatAmount()}",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -308,7 +310,7 @@ private fun ReceivableRow(
                     }
                 }
                 Text(
-                    "$amountPrefix¥${"%.2f".format(r.amount)}",
+                    "$amountPrefix¥${r.amount.formatAmount()}",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = amountColor

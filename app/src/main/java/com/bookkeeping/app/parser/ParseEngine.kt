@@ -98,12 +98,12 @@ class ParseEngine(
         return null
     }
 
-    /** 取第一个非空捕获组作为金额（兼容多分支 alternation 模式） */
+    /** 取第一个非空捕获组作为金额（跳过 group 0 整体匹配；兼容多分支 alternation 模式） */
     private fun findAmount(re: Regex, text: String): Double? {
         val match = re.find(text) ?: return null
-        val raw = match.groupValues.firstOrNull { it.isNotEmpty() } ?: return null
-        val num = raw.replace(",", "").toDoubleOrNull()
-        return if (num != null && num > 0) num else null
+        val raw = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: match.value
+        val num = raw.replace(",", "").toDoubleOrNull() ?: return null
+        return if (num > 0) num else null
     }
 
     private fun extractFirst(text: String, pattern: String): String {

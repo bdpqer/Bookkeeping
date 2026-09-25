@@ -114,7 +114,7 @@ internal fun ReportStatsCard(all: List<Transaction>) {
             // 时间模式 chips（横向可滑动）
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp) // 间距
             ) {
                 RangeMode.entries.forEach { m ->
                     FilterChip(
@@ -179,7 +179,7 @@ internal fun ReportStatsCard(all: List<Transaction>) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(if (showExpense) "支出" else "收入",
                             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("¥${"%.2f".format(sel?.total ?: total)}",
+                        Text("¥${(sel?.total ?: total).formatAmount()}",
                             fontSize = 19.sp, fontWeight = FontWeight.Bold,
                             color = if (showExpense) ExpenseRed else IncomeGreen)
                         if (sel != null) {
@@ -209,7 +209,7 @@ internal fun ReportStatsCard(all: List<Transaction>) {
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (selectedCat == s.category) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier.weight(1f))
-                            Text("¥${"%.2f".format(s.total)}", fontSize = 12.sp)
+                            Text("¥${s.total.formatAmount()}", fontSize = 12.sp)
                             Spacer(Modifier.width(8.dp))
                             Text("${(s.total / total * 100).toInt()}%",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -278,7 +278,7 @@ internal fun androidx.compose.foundation.layout.RowScope.ReportSummary(
         modifier = Modifier.weight(1f)
     ) {
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("¥${"%.2f".format(value)}", fontSize = 14.sp,
+        Text("¥${value.formatAmount()}", fontSize = 14.sp,
             fontWeight = FontWeight.Bold, color = color)
     }
 }
@@ -491,22 +491,4 @@ internal fun ReportDatePicker(
             title = { Text(title, Modifier.padding(start = 24.dp, top = 16.dp)) }
         )
     }
-}
-
-/** 本地零点毫秒 → UTC 零点毫秒（DatePicker 用 UTC） */
-private fun localDayToUtc(localDayStart: Long): Long {
-    val c = Calendar.getInstance().apply { timeInMillis = localDayStart }
-    return Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
-        clear()
-        set(c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH))
-    }.timeInMillis
-}
-
-/** UTC 零点毫秒 → 本地零点毫秒 */
-private fun utcToLocalDayStart(utc: Long): Long {
-    val c = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utc }
-    return Calendar.getInstance().apply {
-        clear()
-        set(c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH))
-    }.timeInMillis
 }

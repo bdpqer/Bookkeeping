@@ -31,6 +31,7 @@ import com.bookkeeping.app.data.entity.Transaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import com.bookkeeping.app.formatAmount
 
 /**
  * 桌面 Widget：今日支出/收入 + 本月支出 + 最近 1 笔
@@ -111,12 +112,12 @@ private fun WidgetContent(d: WidgetData) {
 
         JustifiedRow(
             label = "今日支出", labelColor = Color(0xFFAAAAAA),
-            value = "-¥${String.format("%.2f", d.todayExp)}",
+            value = "-¥${d.todayExp.formatAmount()}",
             valueColor = Color(0xFFE57373), bold = true
         )
         JustifiedRow(
             label = "今日收入", labelColor = Color(0xFFAAAAAA),
-            value = "+¥${String.format("%.2f", d.todayInc)}",
+            value = "+¥${d.todayInc.formatAmount()}",
             valueColor = Color(0xFF81C784), bold = true
         )
 
@@ -126,7 +127,7 @@ private fun WidgetContent(d: WidgetData) {
 
         JustifiedRow(
             label = "本月支出", labelColor = Color(0xFFAAAAAA),
-            value = "-¥${String.format("%.2f", d.monthExp)}",
+            value = "-¥${d.monthExp.formatAmount()}",
             valueColor = Color(0xFFFFAB91)
         )
 
@@ -143,7 +144,7 @@ private fun WidgetContent(d: WidgetData) {
             JustifiedRow(
                 label = "${tx.category}${tx.merchant.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}",
                 labelColor = Color.White,
-                value = "${sign}¥${String.format("%.2f", tx.amount)}",
+                value = "${sign}¥${tx.amount.formatAmount()}",
                 valueColor = color, bold = true
             )
         }

@@ -53,7 +53,6 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.DataBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +73,7 @@ fun TransactionEditDialog(
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getInstance(context) }
 
-    var amountText by remember { mutableStateOf(String.format("%.2f", tx.amount)) }
+    var amountText by remember { mutableStateOf(tx.amount.formatAmount()) }
     var selectedType by remember { mutableStateOf(tx.type) }
     var selectedCategory by remember { mutableStateOf(tx.category) }
     var merchant by remember { mutableStateOf(tx.merchant) }
@@ -110,7 +109,6 @@ fun TransactionEditDialog(
                     )
                 )
             }
-            DataBus.notifyDataChanged()
             onSaved()
         }
     }
@@ -131,7 +129,6 @@ fun TransactionEditDialog(
                             // 软删除：进回收站保留 30 天，凭证暂不删（彻底删除时再清理）
                             db.transactionDao().softDelete(tx.id, System.currentTimeMillis())
                         }
-                        DataBus.notifyDataChanged()
                         onDeleted()
                     }
                 }) { Text("🗑 删除", color = Color(0xFFE53935)) }

@@ -21,6 +21,7 @@ import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
 import java.util.Calendar
+import com.bookkeeping.app.formatAmount
 
 /**
  * 周期调度 Worker：
@@ -112,7 +113,7 @@ class RecurringWorker(
                         accountId = updated.accountId,
                         note = buildString {
                             append("账单分期 第${periodNo}/${updated.installments}期")
-                            if (fee > 0) append("（本金${"%.2f".format(principal)} 手续费${"%.2f".format(fee)}）")
+                            if (fee > 0) append("（本金${principal.formatAmount()} 手续费${fee.formatAmount()}）")
                         },
                         rawText = "[分期] ${account?.name ?: ""} 第$periodNo 期",
                         isManual = false,
@@ -157,7 +158,7 @@ class RecurringWorker(
 
         val body = buildString {
             append(item.name)
-            item.amount?.let { append(" ¥${String.format("%.2f", it)}") }
+            item.amount?.let { append(" ¥${it.formatAmount()}") }
             if (item.note.isNotBlank()) append(" — ${item.note}")
         }
 

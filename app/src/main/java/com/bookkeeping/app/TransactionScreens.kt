@@ -51,7 +51,6 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.service.CaptureLogBus
-import com.bookkeeping.app.service.DataBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -94,7 +93,6 @@ internal fun PendingScreen(onResolved: () -> Unit) {
                 TextButton(onClick = {
                     scope.launch {
                     db.transactionDao().confirmAll()
-                    DataBus.notifyDataChanged()
                     refresh()
                 }
                 }) { Text("✓ 全部确认") }
@@ -139,7 +137,7 @@ internal fun PendingScreen(onResolved: () -> Unit) {
                                     )
                                 }
                                 Text(
-                                    String.format("%s¥%.2f", if (tx.type == Transaction.Type.EXPENSE) "-" else "+", tx.amount),
+                                    "${if (tx.type == Transaction.Type.EXPENSE) "-" else "+"}¥${tx.amount.formatAmount()}",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = when (tx.type) {

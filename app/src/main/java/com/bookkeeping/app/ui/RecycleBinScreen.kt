@@ -45,9 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.EmptyState
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.DataBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +56,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.bookkeeping.app.formatAmount
 
 private val deletedTimeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 private val occurredTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -91,7 +92,6 @@ fun RecycleBinScreen(onClose: () -> Unit) {
     fun restore(tx: Transaction) {
         scope.launch {
             withContext(Dispatchers.IO) { db.transactionDao().restore(tx.id) }
-            DataBus.notifyDataChanged()
             reload()
         }
     }
@@ -102,7 +102,6 @@ fun RecycleBinScreen(onClose: () -> Unit) {
                 db.transactionDao().purge(tx.id)
                 ReceiptStore.deleteReceipt(context, tx.id)
             }
-            DataBus.notifyDataChanged()
             reload()
         }
     }
@@ -113,7 +112,6 @@ fun RecycleBinScreen(onClose: () -> Unit) {
                 list.forEach { ReceiptStore.deleteReceipt(context, it.id) }
                 db.transactionDao().purgeAll()
             }
-            DataBus.notifyDataChanged()
             reload()
         }
     }
@@ -148,18 +146,7 @@ fun RecycleBinScreen(onClose: () -> Unit) {
             )
 
             if (loaded && list.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🗑", fontSize = 48.sp)
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "回收站是空的",
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+                EmptyState("🗑", "回收站是空的")
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -282,7 +269,7 @@ private fun DeletedTxItem(
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                (if (isExpense || isTransfer) "-" else "+") + String.format("%.2f", tx.amount),
+                (if (isExpense || isTransfer) "-" else "+") + tx.amount.formatAmount(),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = amountColor

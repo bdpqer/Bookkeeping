@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.LedgerDropdownTitle
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.DebtRecord
 import com.bookkeeping.app.data.entity.Ledger
@@ -62,6 +63,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.bookkeeping.app.formatAmount
 
 private val debtDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
@@ -133,7 +135,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                     Column(Modifier.padding(14.dp)) {
                         Text("别人欠我", fontSize = 12.sp, color = Color(0xFF8D6E63))
                         Text(
-                            "¥${String.format("%.2f", totalLent)}",
+                            "¥${totalLent.formatAmount()}",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFEF6C00)
@@ -148,7 +150,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                     Column(Modifier.padding(14.dp)) {
                         Text("我欠别人", fontSize = 12.sp, color = Color(0xFF546E7A))
                         Text(
-                            "¥${String.format("%.2f", totalBorrowed)}",
+                            "¥${totalBorrowed.formatAmount()}",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1565C0)
@@ -266,13 +268,13 @@ private fun DebtItem(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        "¥${String.format("%.2f", debt.amount)}",
+                        "¥${debt.amount.formatAmount()}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = if (isLent) Color(0xFFEF6C00) else Color(0xFF1565C0)
                     )
                     Text(
-                        if (debt.settled) "✅ 已结清" else "剩 ¥${String.format("%.2f", debt.remaining)}",
+                        if (debt.settled) "✅ 已结清" else "剩 ¥${debt.remaining.formatAmount()}",
                         fontSize = 11.sp,
                         color = if (debt.settled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -433,13 +435,13 @@ private fun RepayDebtDialog(
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getInstance(context) }
     val isLent = debt.direction == DebtRecord.LENT_OUT
-    var amountText by remember { mutableStateOf(String.format("%.2f", debt.remaining)) }
+    var amountText by remember { mutableStateOf(debt.remaining.formatAmount()) }
     var alsoRecord by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val amountStr = String.format("%.2f", debt.amount)
-    val repaidStr = String.format("%.2f", debt.repaid)
-    val remainingStr = String.format("%.2f", debt.remaining)
+    val amountStr = debt.amount.formatAmount()
+    val repaidStr = debt.repaid.formatAmount()
+    val remainingStr = debt.remaining.formatAmount()
     val summaryText = "借款 ¥$amountStr，" +
         (if (isLent) "已收 ¥$repaidStr" else "已还 ¥$repaidStr") +
         "，剩 ¥$remainingStr"
@@ -500,7 +502,7 @@ private fun RepayDebtDialog(
                                             merchant = debt.person,
                                             source = "借贷",
                                             note = if (isLent) "收回借款" else "归还借款",
-                                            rawText = "[借贷] ${debt.person} ¥${String.format("%.2f", amt)}",
+                                            rawText = "[借贷] ${debt.person} ¥${amt.formatAmount()}",
                                             isManual = true,
                                             confirmed = true,
                                             confidence = Transaction.Confidence.HIGH,

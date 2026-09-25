@@ -76,7 +76,7 @@ suspend fun checkBudgetAndNotify(context: Context) {
         val notif = androidx.core.app.NotificationCompat.Builder(context, CHANNEL_BUDGET_ALERT)
             .setSmallIcon(com.bookkeeping.app.R.drawable.ic_launcher_foreground)
             .setContentTitle("⚠️ 本月预算已超支")
-            .setContentText("本月已支出 ¥${"%.2f".format(spent)}，超出预算 ¥${"%.2f".format(spent - budget)}")
+            .setContentText("本月已支出 ¥${spent.formatAmount()}，超出预算 ¥${(spent - budget).formatAmount()}")
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()

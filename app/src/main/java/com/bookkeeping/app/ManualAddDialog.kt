@@ -68,7 +68,6 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.DataBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -211,7 +210,6 @@ fun ManualAddDialog(
                     if (delta != 0.0) db.accountDao().adjustBalance(selectedAccountId!!, delta)
                 }
             }
-            DataBus.notifyDataChanged()
             onDismiss()
         }
     }
