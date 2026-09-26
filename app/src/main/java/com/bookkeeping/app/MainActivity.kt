@@ -12,6 +12,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import com.bookkeeping.app.data.entity.Transaction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -158,6 +160,8 @@ private fun MainScaffold(
 ) {
     var currentTab by remember { mutableStateOf(Tab.HOME) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var voiceVisible by remember { mutableStateOf(false) }
+    var voicePrefill by remember { mutableStateOf<VoicePrefill?>(null) }
     var secondaryOpen by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bookkeeping.app.data.entity.ParseRule?>(null) }
     var showRuleEditor by remember { mutableStateOf(false) }
@@ -268,7 +272,7 @@ private fun MainScaffold(
                 )
             }
 
-            // 钱迹风格大按钮：可在屏幕上任意拖动
+            // 钱迹风格大按钮：可在屏幕上任意拖动；点按记一笔，长按语音记账
             if (!secondaryOpen && currentTab != Tab.SETTINGS && currentTab != Tab.PENDING && currentTab != Tab.CALENDAR) {
                 val config = androidx.compose.ui.platform.LocalConfiguration.current
                 val density = androidx.compose.ui.platform.LocalDensity.current
@@ -291,7 +295,12 @@ private fun MainScaffold(
                             }
                         }
                         .background(Color(0xFFDCEBFF), RoundedCornerShape(20.dp))
-                        .clickable { showAddDialog = true },
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { showAddDialog = true },
+                                onLongPress = { voiceVisible = true }
+                            )
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Text("+", fontSize = 30.sp, color = Color(0xFF2E5AAC), fontWeight = FontWeight.Medium)
@@ -301,8 +310,24 @@ private fun MainScaffold(
     }
 
     if (showAddDialog) {
-        ManualAddDialog(onDismiss = { showAddDialog = false })
+        ManualAddDialog(
+            onDismiss = { showAddDialog = false; voicePrefill = null },
+            initialType = voicePrefill?.type ?: Transaction.Type.EXPENSE,
+            initialCategory = voicePrefill?.category,
+            initialAmount = voicePrefill?.amount ?: "",
+            initialNote = voicePrefill?.note ?: ""
+        )
     }
+
+    VoiceRecordOverlay(
+        visible = voiceVisible,
+        onPrefill = { p ->
+            voiceVisible = false
+            voicePrefill = p
+            showAddDialog = true
+        },
+        onDismiss = { voiceVisible = false }
+    )
 
     if (showRuleEditor) {
         RuleEditDialog(

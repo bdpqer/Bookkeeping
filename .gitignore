@@ -22,3 +22,6 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# 离线语音模型（单文件超 GitHub 100MB 限制，仅本地保留）
+app/src/main/assets/model/

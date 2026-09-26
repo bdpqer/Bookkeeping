@@ -110,6 +110,8 @@ internal fun Modifier.embeddedImePadding(): Modifier {
  * 记一笔弹窗。
  * @param initialType    预选类型（支出/收入/转账）
  * @param initialCategory 预选分类（null 用默认）
+ * @param initialAmount  预填金额文本（语音记账）
+ * @param initialNote    预填备注（语音记账存原始识别文本）
  * @param fixedCategory  true 时隐藏类型 Tab + 分类网格，类型/分类锁定为 initial 值（用于报销）
  * @param onCapture      非 null 时进入「捕获模式」：保存按钮回传 ManualEntryData 而不落库（用于周期任务）
  * @param embedded       true 表示弹窗已处于外层 Scaffold 的 padding 区内（二级页面调用）：
@@ -121,6 +123,8 @@ fun ManualAddDialog(
     onDismiss: () -> Unit,
     initialType: Transaction.Type = Transaction.Type.EXPENSE,
     initialCategory: String? = null,
+    initialAmount: String = "",
+    initialNote: String = "",
     fixedCategory: Boolean = false,
     onCapture: ((ManualEntryData) -> Unit)? = null,
     reimburseStatus: String? = null,
@@ -131,11 +135,11 @@ fun ManualAddDialog(
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getInstance(context) }
 
-    var amountText by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf(initialAmount) }
     var selectedType by remember { mutableStateOf(initialType) }
     var selectedCategory by remember { mutableStateOf(initialCategory ?: "餐饮/外卖") }
     var merchant by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf(initialNote) }
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }
     var ledgers by remember { mutableStateOf<List<Ledger>>(emptyList()) }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }

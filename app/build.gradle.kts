@@ -18,6 +18,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+
+        // sherpa-onnx AAR 自带 4 个 ABI，只保留真机需要的两个，避免 APK 膨胀
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildTypes {
@@ -40,6 +43,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // sherpa-onnx 模型文件（assets/model/*.onnx）不压缩，加快加载与安装
+    androidResources {
+        noCompress += "onnx"
     }
 
     packaging {
@@ -87,4 +95,7 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // sherpa-onnx 官方 AAR（classes.jar + 双架构 so 一体），语音离线识别用
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
 }
