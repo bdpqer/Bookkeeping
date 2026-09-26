@@ -432,16 +432,12 @@ fun ManualAddDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            accounts.firstOrNull { it.id == selectedAccountId }?.let { "${it.icon} ${it.name}" } ?: "不关联",
+                                            accounts.firstOrNull { it.id == selectedAccountId }?.let { "${it.icon} ${it.name}" } ?: "",
                                             fontSize = 14.sp, fontWeight = FontWeight.Medium
                                         )
                                         Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     DropdownMenu(expanded = accMenu, onDismissRequest = { accMenu = false }) {
-                                        DropdownMenuItem(
-                                            text = { Text("不关联账户") },
-                                            onClick = { selectedAccountId = null; accMenu = false }
-                                        )
                                         accounts.forEach { acc ->
                                             DropdownMenuItem(
                                                 text = { Text("${acc.icon} ${acc.name}") },
@@ -473,7 +469,7 @@ fun ManualAddDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            ledgers.firstOrNull { it.id == selectedLedgerId }?.let { "${it.icon} ${it.name}" } ?: "不关联",
+                                            ledgers.firstOrNull { it.id == selectedLedgerId }?.let { "${it.icon} ${it.name}" } ?: "",
                                             fontSize = 14.sp, fontWeight = FontWeight.Medium
                                         )
                                         if (forcedLedgerId == null) {
@@ -481,10 +477,6 @@ fun ManualAddDialog(
                                         }
                                     }
                                     DropdownMenu(expanded = ledMenu, onDismissRequest = { ledMenu = false }) {
-                                        DropdownMenuItem(
-                                            text = { Text("不关联账本") },
-                                            onClick = { selectedLedgerId = null; ledMenu = false }
-                                        )
                                         ledgers.forEach { led ->
                                             DropdownMenuItem(
                                                 text = { Text("${led.icon} ${led.name}") },

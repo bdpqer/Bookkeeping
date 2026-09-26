@@ -89,6 +89,13 @@ fun TransactionEditDialog(
         withContext(Dispatchers.IO) {
             accounts = db.accountDao().getAll()
             ledgers = db.ledgerDao().getAll()
+            // 自动记账的交易可能未关联账户/账本，或 id 已失效：默认选中默认账户/默认账本
+            if (selectedAccountId == null || accounts.none { it.id == selectedAccountId }) {
+                selectedAccountId = accounts.firstOrNull()?.id
+            }
+            if (selectedLedgerId == null || ledgers.none { it.id == selectedLedgerId }) {
+                selectedLedgerId = ledgers.firstOrNull { it.isDefault }?.id ?: ledgers.firstOrNull()?.id
+            }
         }
     }
 
@@ -231,11 +238,10 @@ fun TransactionEditDialog(
                         Spacer(Modifier.weight(1f))
                         Box {
                             Row(Modifier.clickable { accMenu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(accounts.firstOrNull { it.id == selectedAccountId }?.let { "${it.icon} ${it.name}" } ?: "不关联", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text(accounts.firstOrNull { it.id == selectedAccountId }?.let { "${it.icon} ${it.name}" } ?: "", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                 Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             DropdownMenu(expanded = accMenu, onDismissRequest = { accMenu = false }) {
-                                DropdownMenuItem(text = { Text("不关联账户") }, onClick = { selectedAccountId = null; accMenu = false })
                                 accounts.forEach { acc ->
                                     DropdownMenuItem(text = { Text("${acc.icon} ${acc.name}") }, onClick = { selectedAccountId = acc.id; accMenu = false })
                                 }
@@ -251,11 +257,10 @@ fun TransactionEditDialog(
                         Spacer(Modifier.weight(1f))
                         Box {
                             Row(Modifier.clickable { ledMenu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(ledgers.firstOrNull { it.id == selectedLedgerId }?.let { "${it.icon} ${it.name}" } ?: "不关联", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text(ledgers.firstOrNull { it.id == selectedLedgerId }?.let { "${it.icon} ${it.name}" } ?: "", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                 Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             DropdownMenu(expanded = ledMenu, onDismissRequest = { ledMenu = false }) {
-                                DropdownMenuItem(text = { Text("不关联账本") }, onClick = { selectedLedgerId = null; ledMenu = false })
                                 ledgers.forEach { led ->
                                     DropdownMenuItem(text = { Text("${led.icon} ${led.name}") }, onClick = { selectedLedgerId = led.id; ledMenu = false })
                                 }

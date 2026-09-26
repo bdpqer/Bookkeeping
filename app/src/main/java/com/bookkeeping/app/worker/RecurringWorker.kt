@@ -22,6 +22,7 @@ import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
 import java.util.Calendar
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.withDefaultAssociation
 
 /**
  * 周期调度 Worker：
@@ -121,7 +122,7 @@ class RecurringWorker(
                         confidence = Transaction.Confidence.HIGH,
                         occurredAt = System.currentTimeMillis()
                     )
-                    db.transactionDao().insert(tx)
+                    db.transactionDao().insert(tx.withDefaultAssociation(db))
                     updated = updated.copy(
                         paidPeriods = periodNo,
                         status = if (periodNo >= updated.installments) InstallmentPlan.Status.DONE
@@ -193,7 +194,7 @@ class RecurringWorker(
             confidence = Transaction.Confidence.HIGH,
             occurredAt = System.currentTimeMillis()
         )
-        db.transactionDao().insert(tx)
+        db.transactionDao().insert(tx.withDefaultAssociation(db))
         Log.i(BookkeepingApp.TAG, "✅ Auto-inserted recurring tx: ${item.name} amt=${item.amount}")
     }
 

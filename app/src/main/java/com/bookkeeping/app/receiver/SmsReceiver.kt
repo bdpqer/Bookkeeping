@@ -12,6 +12,7 @@ import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.checkBudgetAndNotify
+import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
@@ -134,6 +135,7 @@ class SmsReceiver : BroadcastReceiver() {
                     occurredAt = time
                 )
                 if (tx != null) {
+                    val tx = tx.withDefaultAssociation(db)
                     val since = tx.occurredAt - 5 * 60 * 1000
                     val until = tx.occurredAt + 5 * 60 * 1000
                     val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)

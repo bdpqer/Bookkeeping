@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.LedgerDropdownTitle
+import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.DebtRecord
 import com.bookkeeping.app.data.entity.Ledger
@@ -507,7 +508,7 @@ private fun RepayDebtDialog(
                                             confirmed = true,
                                             confidence = Transaction.Confidence.HIGH,
                                             occurredAt = System.currentTimeMillis()
-                                        )
+                                        ).withDefaultAssociation(db)
                                     )
                                 }
                             }

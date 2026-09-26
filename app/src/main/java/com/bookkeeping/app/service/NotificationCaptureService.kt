@@ -16,6 +16,7 @@ import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
 import com.bookkeeping.app.checkBudgetAndNotify
+import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
@@ -154,6 +155,7 @@ class NotificationCaptureService : NotificationListenerService() {
                 occurredAt = sbn.postTime
             )
             if (tx != null) {
+                val tx = tx.withDefaultAssociation(db)
                 // 去重：同 5 分钟内、同金额、同类型
                 val since = tx.occurredAt - 5 * 60 * 1000
                 val until = tx.occurredAt + 5 * 60 * 1000

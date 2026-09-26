@@ -122,6 +122,10 @@ interface TransactionDao {
     @Query("UPDATE transactions SET deletedAt = 0 WHERE id = :id")
     suspend fun restore(id: Long)
 
+    /** 历史数据修复：无账本关联的交易归入默认账本（账户缺失时补第一个账户） */
+    @Query("UPDATE transactions SET ledgerId = :ledgerId, accountId = COALESCE(accountId, :accountId) WHERE ledgerId IS NULL AND deletedAt = 0")
+    suspend fun fixNullAssociations(ledgerId: Long, accountId: Long?)
+
     @Query("DELETE FROM transactions WHERE id = :id AND deletedAt > 0")
     suspend fun purge(id: Long)
 

@@ -36,6 +36,7 @@ class BookkeepingApp : Application() {
         seedParseRulesIfNeeded()
         seedDefaultsIfNeeded()
         seedMerchantRulesIfNeeded()
+        fixLegacyAssociations()
         RecurringWorker.triggerNow(this)
         AutoBackupWorker.ensureScheduled(this)
     }
@@ -83,6 +84,17 @@ class BookkeepingApp : Application() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "seedMerchantRulesIfNeeded failed", e)
+            }
+        }
+    }
+
+    /** 历史数据修复：早期自动记账生成的交易无账本关联，启动时幂等归入默认账本 */
+    private fun fixLegacyAssociations() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                fixNullLedgerTransactions(AppDatabase.getInstance(this@BookkeepingApp))
+            } catch (e: Exception) {
+                Log.e(TAG, "fixLegacyAssociations failed", e)
             }
         }
     }
