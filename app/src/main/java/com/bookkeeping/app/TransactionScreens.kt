@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,7 +31,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,7 +51,6 @@ import androidx.compose.material.icons.filled.Search
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -63,39 +63,39 @@ import java.util.Locale
 // ─── 待确认队列 ─────────────────────────────────────────────
 
 @Composable
-internal fun PendingScreen(onResolved: () -> Unit) {
+internal fun PendingScreen() {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
-    var pending by remember { mutableStateOf<List<Transaction>>(emptyList()) }
+    // Flow 订阅：自动捕获入库后由 Room InvalidationTracker 实时推送，无需手动刷新
+    val pending by remember(db) { db.transactionDao().observePending() }
+        .collectAsState(initial = emptyList())
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
-
-    fun refresh() {
-        scope.launch {
-            pending = withContext(Dispatchers.IO) { db.transactionDao().getPending() }
-            onResolved()
-        }
-    }
-
-    LaunchedEffect(Unit) { refresh() }
-    DisposableEffect(Unit) {
-        val unsub = CaptureLogBus.subscribe { refresh() }
-        onDispose { unsub() }
-    }
+    var confirmingAll by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        // 一键全部确认
+        // 一键全部确认（含 loading 指示；大批量确认时按钮无响应易被误以为卡死）
         if (pending.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = {
-                    scope.launch {
-                    db.transactionDao().confirmAll()
-                    refresh()
+                if (confirmingAll) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("处理中…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    TextButton(onClick = {
+                        confirmingAll = true
+                        scope.launch {
+                            try { db.transactionDao().confirmAll() } finally { confirmingAll = false }
+                        }
+                    }) { Text("✓ 全部确认") }
                 }
-                }) { Text("✓ 全部确认") }
             }
         }
 
@@ -160,10 +160,7 @@ internal fun PendingScreen(onResolved: () -> Unit) {
                             ) {
                                 AssistChip(
                                     onClick = {
-                                        scope.launch {
-                                            db.transactionDao().confirm(tx.id)
-                                            refresh()
-                                        }
+                                        scope.launch { db.transactionDao().confirm(tx.id) }
                                     },
                                     label = { Text("✓ 确认入账") }
                                 )
@@ -183,8 +180,8 @@ internal fun PendingScreen(onResolved: () -> Unit) {
         TransactionEditDialog(
             tx = editingTx!!.copy(confirmed = true),
             onDismiss = { editingTx = null },
-            onSaved = { editingTx = null; refresh() },
-            onDeleted = { editingTx = null; refresh() }
+            onSaved = { editingTx = null },
+            onDeleted = { editingTx = null }
         )
     }
 }
@@ -225,18 +222,29 @@ internal fun TransactionListScreen() {
             else -> db.transactionDao().observeSearch(kw)
         }
     }.collectAsState(initial = emptyList<Transaction>())
-    val transactions =
+    // 时间过滤包 remember：仅在数据或筛选范围变化时重算，避免每次重组全表过滤
+    val transactions = remember(baseList, timeRange) {
         if (timeRange != null) baseList.filter { it.occurredAt in timeRange.first..timeRange.second }
         else baseList
+    }
 
     LaunchedEffect(Unit) {
         ledgers = withContext(Dispatchers.IO) { db.ledgerDao().getAll() }
     }
 
     Column(Modifier.fillMaxSize()) {
-        // 当前筛选结果的汇总：支出 / 收入 / 结余
-        val sumExpense = transactions.filter { it.type == Transaction.Type.EXPENSE }.sumOf { it.amount }.round2()
-        val sumIncome = transactions.filter { it.type == Transaction.Type.INCOME }.sumOf { it.amount }.round2()
+        // 当前筛选结果的汇总：支出 / 收入 / 结余（单次遍历 + remember，避免每次重组重复计算）
+        val sums = remember(transactions) {
+            var exp = 0.0
+            var inc = 0.0
+            for (tx in transactions) {
+                if (tx.type == Transaction.Type.EXPENSE) exp += tx.amount
+                else if (tx.type == Transaction.Type.INCOME) inc += tx.amount
+            }
+            exp.round2() to inc.round2()
+        }
+        val sumExpense = sums.first
+        val sumIncome = sums.second
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
             shape = RoundedCornerShape(10.dp),

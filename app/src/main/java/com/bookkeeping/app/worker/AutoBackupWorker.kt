@@ -8,14 +8,12 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.bookkeeping.app.BookkeepingApp
-import com.bookkeeping.app.data.AppDatabase
+import com.bookkeeping.app.createBackupZip
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 /**
  * 每周自动备份 Worker：
@@ -30,32 +28,14 @@ class AutoBackupWorker(
     override suspend fun doWork(): Result {
         return try {
             val context = applicationContext
-            val db = AppDatabase.getInstance(context)
-            // WAL 合并进主文件，保证导出的 .db 完整
-            db.openHelper.writableDatabase
-                .query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)"))
-                .use { it.moveToFirst() }
-
             val outDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "backup")
             outDir.mkdirs()
             val out = File(
                 outDir,
                 "bookkeeping_auto_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.zip"
             )
-            ZipOutputStream(out.outputStream().buffered()).use { zip ->
-                zip.putNextEntry(ZipEntry("bookkeeping.db"))
-                context.getDatabasePath("bookkeeping.db").inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
-                val receipts = File(context.filesDir, "receipts")
-                receipts.listFiles()
-                    ?.filter { it.isFile && it.length() > 0 }
-                    ?.sortedBy { it.name }
-                    ?.forEach { img ->
-                        zip.putNextEntry(ZipEntry("receipts/${img.name}"))
-                        img.inputStream().use { it.copyTo(zip) }
-                        zip.closeEntry()
-                    }
-            }
+            // 打包逻辑与手动备份共用（WAL 合并 + 数据库 + 凭证图片）
+            createBackupZip(context, out)
             // 轮换：只保留最近 4 份
             outDir.listFiles()
                 ?.filter { it.name.startsWith("bookkeeping_auto_") }

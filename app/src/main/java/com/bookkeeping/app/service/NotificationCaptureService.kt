@@ -13,17 +13,17 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.glance.appwidget.updateAll
 import com.bookkeeping.app.BookkeepingApp
+import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
 import com.bookkeeping.app.checkBudgetAndNotify
+import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.FileWriter
-import java.io.PrintWriter
 
 /**
  * 核心服务：监听所有支付相关 App 的通知。
@@ -52,6 +52,9 @@ class NotificationCaptureService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         fileLog("🔧 NotificationCaptureService.onCreate()")
+        // 注册进程内规则刷新钩子：Service 声明了 android:permission（系统签名权限），
+        // 同进程 startService 会 SecurityException，外部组件须经此钩子触发热刷新
+        NotificationCaptureService.rulesRefresher = { refreshRules() }
         // 首次从 DB 加载规则
         refreshRules()
         // Android 8+ 要求 startForegroundService 在 5s 内调 startForeground
@@ -141,10 +144,8 @@ class NotificationCaptureService : NotificationListenerService() {
 
         val fullDump = dumpAllExtras(extras, pkg)
 
+        // 文件日志只留一行摘要防膨胀；完整 extras dump 仍进 CaptureLogBus 供调试面板查看
         fileLog("🎯 onNotificationPosted pkg=$pkg text=${rawText.take(200)}")
-        fileLog("━━━ EXTRAS DUMP ━━━")
-        fileLog(fullDump)
-        fileLog("━━━ END DUMP ━━━")
 
         // ─── 解析 + 入库 ────────────────────────────────────────
         scope.launch {
@@ -163,24 +164,23 @@ class NotificationCaptureService : NotificationListenerService() {
                 if (dupes.isEmpty()) {
                     val id = db.transactionDao().insert(tx)
                     fileLog("✅ 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}")
+                    handler.post {
+                        android.widget.Toast.makeText(
+                            this@NotificationCaptureService,
+                            "🎯 [${pkgToChannel(pkg)}] ¥${tx.amount.formatAmount()}",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     // 刷新桌面 Widget
                     com.bookkeeping.app.widget.BookkeepingWidget().updateAll(this@NotificationCaptureService)
                     // 预算超支检查（每自然月最多提醒一次）
-                    checkBudgetAndNotify(this@NotificationCaptureService)
+                    checkBudgetAndNotify(this@NotificationCaptureService, ledgerId = tx.ledgerId)
                 } else {
                     fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
                 }
             } else {
                 fileLog("❌ 解析失败（无法提取金额或文本为空）")
             }
-        }
-
-        handler.post {
-            android.widget.Toast.makeText(
-                this,
-                "🎯 [$pkg] ${rawText.take(50)}",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
         }
 
         val entry = CaptureLogBus.CaptureEntry(
@@ -231,19 +231,8 @@ class NotificationCaptureService : NotificationListenerService() {
 
     // ─── 调试：写文件日志 ──────────────────────────────────────
 
-    private fun fileLog(msg: String) {
-        val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-            .format(java.util.Date())
-        val line = "$ts  $msg\n"
-        try {
-            // 用应用私有目录，不用 sdcard 权限
-            val f = java.io.File(filesDir, "service.log")
-            PrintWriter(FileWriter(f, true)).use { it.append(line) }
-            Log.d(BookkeepingApp.TAG, msg)
-        } catch (e: Exception) {
-            Log.e(BookkeepingApp.TAG, "fileLog failed: ${e.message}")
-        }
-    }
+    /** 统一走 FileLog（带 1MB 轮转防膨胀） */
+    private fun fileLog(msg: String) = FileLog.append(this, "service.log", msg)
 
     // ─── 工具 ──────────────────────────────────────────────────
 
@@ -281,11 +270,8 @@ class NotificationCaptureService : NotificationListenerService() {
     companion object {
         private const val FOREGROUND_ID = 1001
 
-        val INTERESTING_PACKAGES = setOf(
-            "com.tencent.mm", "com.eg.android.AlipayGphone", "com.unionpay",
-            "com.icbc", "cmb.pb", "com.chinamworld.main",
-            "com.android.bankabc", "com.bankofchina.mbank", "com.bocom.mbank",
-            "com.sankuai.meituan", "me.ele"
-        )
+        /** 规则热刷新钩子：onCreate 时由实例注册，保存解析规则后同进程直接调用 */
+        @Volatile
+        internal var rulesRefresher: (() -> Unit)? = null
     }
 }

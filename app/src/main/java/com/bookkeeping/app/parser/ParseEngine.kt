@@ -3,6 +3,8 @@ package com.bookkeeping.app.parser
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.data.entity.ParseRule
 import com.bookkeeping.app.data.entity.Transaction
+import com.bookkeeping.app.parseChineseNumber
+import com.bookkeeping.app.round2
 
 /**
  * 解析引擎：把短信/通知的原始文本 → Transaction。
@@ -48,12 +50,14 @@ class ParseEngine(
         val type = determineType(text, matched)
         val merchant = matched?.patternMerchant?.let { extractFirst(text, it) } ?: ""
         val category = guessCategory(text, merchant, sourcePackage)
-        val time = matched?.patternTime?.let { extractTime(text, it) } ?: occurredAt
+        // 时间：直接用捕获方传入的事件时间（通知到达/短信日期）；
+        // patternTime 字段暂未实现真正的文本时间解析，留着待增强
+        val time = occurredAt
 
-        // 3. 判断置信度
+        // 3. 判断置信度（amount 在 L46 已确保非空，无需再判）
         val confidence = when {
             matched != null -> Transaction.Confidence.HIGH
-            amount != null && type != Transaction.Type.TRANSFER -> Transaction.Confidence.MEDIUM
+            type != Transaction.Type.TRANSFER -> Transaction.Confidence.MEDIUM
             else -> Transaction.Confidence.LOW
         }
 
@@ -65,7 +69,9 @@ class ParseEngine(
             source = sourceChannel,
             rawText = text,
             isManual = false,
-            confirmed = confidence == Transaction.Confidence.HIGH,
+            // 所有自动捕获（通知/短信）一律先进待确认列表，手动确认后才转正为正式记账；
+            // confidence 仅作为待确认列表的参考标记，不再用于自动转正
+            confirmed = false,
             confidence = confidence,
             occurredAt = time
         )
@@ -91,8 +97,25 @@ class ParseEngine(
                 findAmount(re, text)?.let { return it }
             }
         }
-        // 通用兜底模式（预编译，高频路径不重复编译）
-        for (re in COMMON_AMOUNT_REGEXES) {
+        // 锚定模式：货币符号/「元」紧跟数字（预编译）
+        for (re in ANCHORED_AMOUNT_REGEXES) {
+            findAmount(re, text)?.let { return it }
+        }
+        // 口语「块」：88块5 / 88块5毛 / 45块8毛2 / 五十八块五（X块Y毛Z = X+Y/10+Z/100）
+        COLLOQUIAL_KUAI_REGEX.find(text)?.let { m ->
+            val whole = m.groupValues[1].toDoubleOrNull() ?: parseChineseNumber(m.groupValues[1])
+            if (whole != null && whole > 0) {
+                val mao = digitOf(m.groupValues[2])
+                val fen = digitOf(m.groupValues[3])
+                return (whole + (mao ?: 0.0) / 10.0 + (fen ?: 0.0) / 100.0).round2()
+            }
+        }
+        // 中文数字 + 元：三十五元 / 六十元
+        CN_YUAN_REGEX.find(text)?.let { m ->
+            parseChineseNumber(m.groupValues[1])?.let { return it }
+        }
+        // 松散模式最后兜底：花了50 / 花费50 / 支付50（可能截断「88块5」式小数，故放在口语模式之后）
+        for (re in LOOSE_AMOUNT_REGEXES) {
             findAmount(re, text)?.let { return it }
         }
         return null
@@ -109,13 +132,6 @@ class ParseEngine(
     private fun extractFirst(text: String, pattern: String): String {
         val match = safeRegex(pattern)?.find(text) ?: return ""
         return match.groupValues.getOrNull(1) ?: match.value
-    }
-
-    private fun extractTime(text: String, pattern: String): Long {
-        val match = safeRegex(pattern)?.find(text) ?: return System.currentTimeMillis()
-        // 简单处理：直接返回匹配文本作为时间（实际应该 parse 成时间戳）
-        // 先返回当前时间，后续有需要再增强
-        return System.currentTimeMillis()
     }
 
     // ─── 类型判断 ──────────────────────────────────────────────
@@ -190,8 +206,8 @@ class ParseEngine(
             if (pattern.isNullOrBlank()) null
             else try { Regex(pattern) } catch (e: Exception) { null }
 
-        /** 通用金额兜底模式（预编译，避免每条通知重复编译正则） */
-        private val COMMON_AMOUNT_REGEXES: List<Regex> = listOf(
+        /** 锚定金额模式：货币符号/「元」紧跟数字，优先级最高（预编译，避免每条通知重复编译正则） */
+        private val ANCHORED_AMOUNT_REGEXES: List<Regex> = listOf(
             Regex("""[¥￥]\s*([\d,]+\.\d{1,2})"""),           // ¥1,234.56 或 ￥1234.56
             Regex("""[¥￥]\s*(\d+(?:\.\d{1,2})?)"""),         // ¥5 或 ¥5.00
             Regex("""人民币\s*([\d,]+\.\d{1,2})"""),           // 人民币1,234.56
@@ -199,15 +215,37 @@ class ParseEngine(
             Regex("""金额[：:]\s*([\d,]+\.\d{1,2})"""),        // 金额：1234.56
             Regex("""金额[：:]\s*(\d+(?:\.\d{1,2})?)"""),      // 金额：5
             Regex("""([\d,]+\.\d{1,2})\s*元"""),               // 1234.56元
-            Regex("""(\d+(?:\.\d{1,2})?)\s*元"""),             // 5元
+            Regex("""(\d+(?:\.\d{1,2})?)\s*元""")              // 5元
+        )
+
+        /** 松散金额模式：仅靠上下文词定位，可能截断「88块5」式小数，故放在口语模式之后兜底 */
+        private val LOOSE_AMOUNT_REGEXES: List<Regex> = listOf(
+            Regex("""(?:花了|花费)\s*(\d+(?:\.\d{1,2})?)"""),  // 花了50 / 花费50
             // 微信/支付宝消费可能有 "付款 ¥XX"
             Regex("""(?:付款|支付|消费)[^¥￥]{0,5}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
         )
 
+        /**
+         * 口语「块」模式：88块5 / 88块5毛 / 45块8毛2 / 45块8角2分 / 五十八块五 / 六十块 / 88.5块。
+         * 毛角分小数必须紧跟「块(钱)」之后（不容空格），防止「50块 3瓶水」误截成 50.3
+         */
+        private val COLLOQUIAL_KUAI_REGEX =
+            Regex("""((?:\d+(?:\.\d{1,2})?)|(?:[零一二两三四五六七八九十百千万]+(?:点[零一二两三四五六七八九十]+)?))\s*块(?:钱)?(?:([0-9零一二两三四五六七八九])(?:[毛角]([0-9零一二两三四五六七八九])分?)?)?""")
+
+        /** 毛角分位换算：单字符数字（阿拉伯或中文）→ 数值，空串返回 null */
+        private fun digitOf(s: String): Double? {
+            if (s.isEmpty()) return null
+            return s.toDoubleOrNull() ?: parseChineseNumber(s)
+        }
+
+        /** 中文数字 + 元：三十五元 / 六十元（块系列由 COLLOQUIAL_KUAI_REGEX 覆盖） */
+        private val CN_YUAN_REGEX =
+            Regex("""([零一二两三四五六七八九十百千万]+(?:点[零一二两三四五六七八九十]+)?)\s*元""")
+
         /** 通用类型判断正则（预编译） */
         private val COMMON_INCOME_REGEX = Regex("""收入|入账|汇款转入|转入|到账|退款|获得""")
         private val COMMON_TRANSFER_REGEX = Regex("""转账|互联汇出|互联汇入""")
-        private val COMMON_EXPENSE_REGEX = Regex("""支出|消费|扣款|支付|汇出|转出|付款|扣费|还款""")
+        private val COMMON_EXPENSE_REGEX = Regex("""支出|消费|扣款|支付|汇出|转出|付款|扣费|还款|花费|花了""")
 
         /** 预定义正则规则（硬编码在代码里，后续可迁移到 DB 让用户配置） */
         val DEFAULT_RULES: List<ParseRule> = listOf(

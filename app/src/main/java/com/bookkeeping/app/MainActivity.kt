@@ -39,7 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,12 +56,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import com.bookkeeping.app.data.AppDatabase
-import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.BookkeepingTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -165,19 +162,12 @@ private fun MainScaffold(
     var secondaryOpen by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bookkeeping.app.data.entity.ParseRule?>(null) }
     var showRuleEditor by remember { mutableStateOf(false) }
-    var pendingCount by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
-
-    fun refreshPending() {
-        scope.launch { pendingCount = withContext(Dispatchers.IO) { db.transactionDao().getPendingCount() } }
-    }
-    LaunchedEffect(Unit) { refreshPending() }
-    DisposableEffect(Unit) {
-        val unsub = CaptureLogBus.subscribe { refreshPending() }
-        onDispose { unsub() }
-    }
+    // 待确认角标：Flow 订阅实时更新（入库/确认/删除由 Room 自动推送）
+    val pendingCount by remember(db) { db.transactionDao().observePendingCount() }
+        .collectAsState(initial = 0)
 
     Scaffold(
         topBar = {
@@ -262,7 +252,7 @@ private fun MainScaffold(
                     onSecondaryScreenChanged = { secondaryOpen = it }
                 )
                 Tab.CALENDAR -> CalendarScreen()
-                Tab.PENDING -> PendingScreen(onResolved = { refreshPending() })
+                Tab.PENDING -> PendingScreen()
                 Tab.LIST -> TransactionListScreen()
                 Tab.SETTINGS -> SettingsScreen(
                     themeMode = themeMode,

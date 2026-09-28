@@ -85,7 +85,8 @@ class RecurringWorker(
         processInstallments(db, now)
 
         // 3. 预算超支检查（每自然月最多提醒一次）
-        checkBudgetAndNotify(applicationContext)
+        // RecurringWorker 入库走 withDefaultAssociation，tx 落账默认账本
+        checkBudgetAndNotify(applicationContext, ledgerId = null)
 
         scheduleNext(applicationContext, db)
         return Result.success()

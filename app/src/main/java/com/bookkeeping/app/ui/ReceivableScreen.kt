@@ -160,7 +160,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                     }
 
                     // 待处理项
-                    items(pendingList) { r ->
+                    items(pendingList, key = { it.id }) { r ->
                         ReceivableRow(
                             r = r,
                             isReceivable = tab == 0,
@@ -190,7 +190,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
-                        items(doneList) { r ->
+                        items(doneList, key = { it.id }) { r ->
                             ReceivableRow(
                                 r = r,
                                 isReceivable = tab == 0,

@@ -128,7 +128,7 @@ fun RecurringScreen(onClose: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             if (filter != 2) {
-                                items(recurring) { item ->
+                                items(recurring, key = { it.id }) { item ->
                                     RecurringRow(
                                         item = item,
                                         onClick = { editingRecurring = item; editorMode = 1 },
@@ -144,7 +144,7 @@ fun RecurringScreen(onClose: () -> Unit) {
                                 }
                             }
                             if (filter != 1) {
-                                items(plans) { plan ->
+                                items(plans, key = { it.id }) { plan ->
                                     InstallmentRow(
                                         plan = plan,
                                         accountName = accounts.firstOrNull { it.id == plan.accountId }?.name ?: "未知账户",

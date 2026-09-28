@@ -30,12 +30,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,69 +45,56 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 // ─── 记账日历（月历视图） ─────────────────────────────────
 
 @Composable
 internal fun CalendarScreen() {
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
 
     val cal = Calendar.getInstance()
     var viewYearMonth by remember { mutableStateOf(cal.clone() as Calendar) }
-    var daySums by remember { mutableStateOf<Map<Long, Pair<Double, Double>>>(emptyMap()) } // dayKey → (expense, income)
     var selectedDayKey by remember { mutableStateOf<Long?>(null) }
-    var dayTransactions by remember { mutableStateOf<List<Transaction>>(emptyList()) }
-
-    // 计算当月所有天的收支
-    fun loadMonthData() {
-        scope.launch {
-            val y = viewYearMonth.get(Calendar.YEAR)
-            val m = viewYearMonth.get(Calendar.MONTH)
-            val firstDay = Calendar.getInstance().apply { set(y, m, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }
-            val lastDay = Calendar.getInstance().apply { set(y, m, firstDay.getActualMaximum(Calendar.DAY_OF_MONTH), 23, 59, 59) }
-
-            val sums = withContext(Dispatchers.IO) {
-                val result = mutableMapOf<Long, Pair<Double, Double>>()
-                val all = db.transactionDao().getByTimeRange(firstDay.timeInMillis, lastDay.timeInMillis)
-                all.forEach { tx ->
-                    val dayKey = tx.occurredAt / 86_400_000L
-                    val (exp, inc) = result[dayKey] ?: 0.0 to 0.0
-                    result[dayKey] = when (tx.type) {
-                        Transaction.Type.EXPENSE -> exp + tx.amount to inc
-                        Transaction.Type.INCOME -> exp to inc + tx.amount
-                        else -> exp to inc
-                    }
-                }
-                result
+    // 当月交易明细（按当前账本，已确认未删除）。Flow 订阅：新增/确认/删除自动刷新。
+    val currentLedgerId by remember { mutableStateOf<Long?>(null) }   // 后续接 LedgerDropdown 时改
+    val ledgerKey = currentLedgerId
+    val monthTxs by remember(ledgerKey) {
+        if (ledgerKey != null) db.transactionDao().observeLedgerConfirmed(ledgerKey)
+        else db.transactionDao().observeAll()
+    }.collectAsState(initial = emptyList())
+    // 当月按天汇总：依赖 monthTxs + viewYearMonth，remember 避免每次重组重算
+    val daySums = remember(monthTxs, viewYearMonth) {
+        val y = viewYearMonth.get(Calendar.YEAR)
+        val m = viewYearMonth.get(Calendar.MONTH)
+        val firstDay = Calendar.getInstance().apply { set(y, m, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }
+        val lastDay = Calendar.getInstance().apply { set(y, m, firstDay.getActualMaximum(Calendar.DAY_OF_MONTH), 23, 59, 59) }
+        val start = firstDay.timeInMillis
+        val end = lastDay.timeInMillis
+        val result = mutableMapOf<Long, Pair<Double, Double>>()
+        for (tx in monthTxs) {
+            if (tx.occurredAt !in start..end) continue
+            val dayKey = tx.occurredAt / 86_400_000L
+            val (exp, inc) = result[dayKey] ?: 0.0 to 0.0
+            result[dayKey] = when (tx.type) {
+                Transaction.Type.EXPENSE -> exp + tx.amount to inc
+                Transaction.Type.INCOME -> exp to inc + tx.amount
+                else -> exp to inc
             }
-            daySums = sums
         }
+        result
     }
-
-    fun loadSelectedDay(key: Long) {
-        scope.launch {
-            selectedDayKey = key
-            val start = key * 86_400_000L
+    // 选中日期的交易列表（来自 monthTxs 当天过滤）
+    val dayTransactions = remember(selectedDayKey, monthTxs) {
+        if (selectedDayKey == null) emptyList()
+        else {
+            val start = selectedDayKey!! * 86_400_000L
             val end = start + 86_400_000L - 1
-            dayTransactions = withContext(Dispatchers.IO) {
-                db.transactionDao().getByTimeRange(start, end)
-            }
+            monthTxs.filter { it.occurredAt in start..end }
         }
-    }
-
-    LaunchedEffect(viewYearMonth) { loadMonthData() }
-    DisposableEffect(Unit) {
-        val unsub = CaptureLogBus.subscribe { loadMonthData() }
-        onDispose { unsub() }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -182,7 +167,7 @@ internal fun CalendarScreen() {
                                 },
                                 RoundedCornerShape(8.dp)
                             )
-                            .clickable { loadSelectedDay(dayKey) },
+                            .clickable { selectedDayKey = dayKey },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {

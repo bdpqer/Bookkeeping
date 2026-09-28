@@ -157,6 +157,8 @@ abstract class AppDatabase : RoomDatabase() {
                     "bookkeeping.db"
                 )
                     .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    // 兜底迁移：理论上永远不会走到，因为已配齐 v4→v10 所有 Migration。
+                    // 真走到这里说明某次发布忘了写 Migration，用户数据会被清空——务必显著日志。
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

@@ -18,9 +18,8 @@ import com.bookkeeping.app.worker.AutoBackupWorker
 import com.bookkeeping.app.worker.RecurringWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.io.FileWriter
-import java.io.PrintWriter
 
 class BookkeepingApp : Application() {
 
@@ -42,99 +41,91 @@ class BookkeepingApp : Application() {
     }
 
     /** 首次启动初始化默认商家分类规则 */
-    private fun seedMerchantRulesIfNeeded() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.getInstance(this@BookkeepingApp)
-                if (db.merchantRuleDao().count() == 0) {
-                    val defaults = listOf(
-                    MerchantRule(keyword = "星巴克", category = "餐饮/饮品", note = "咖啡连锁"),
-                    MerchantRule(keyword = "瑞幸", category = "餐饮/饮品", note = "咖啡连锁"),
-                    MerchantRule(keyword = "喜茶", category = "餐饮/饮品", note = "奶茶连锁"),
-                    MerchantRule(keyword = "蜜雪冰城", category = "餐饮/饮品", note = "奶茶连锁"),
-                    MerchantRule(keyword = "奶茶", category = "餐饮/饮品"),
-                    MerchantRule(keyword = "咖啡", category = "餐饮/饮品"),
-                    MerchantRule(keyword = "美团", category = "餐饮/外卖"),
-                    MerchantRule(keyword = "饿了么", category = "餐饮/外卖"),
-                    MerchantRule(keyword = "外卖", category = "餐饮/外卖"),
-                    MerchantRule(keyword = "滴滴", category = "交通", note = "打车"),
-                    MerchantRule(keyword = "打车", category = "交通"),
-                    MerchantRule(keyword = "地铁", category = "交通"),
-                    MerchantRule(keyword = "公交", category = "交通"),
-                    MerchantRule(keyword = "高铁", category = "交通"),
-                    MerchantRule(keyword = "机票", category = "交通"),
-                    MerchantRule(keyword = "拼多多", category = "购物"),
-                    MerchantRule(keyword = "淘宝", category = "购物"),
-                    MerchantRule(keyword = "京东", category = "购物"),
-                    MerchantRule(keyword = "工资", category = "工资"),
-                    MerchantRule(keyword = "红包", category = "红包"),
-                    MerchantRule(keyword = "信用卡还款", category = "还款"),
-                    MerchantRule(keyword = "信用卡", category = "还款"),
-                    MerchantRule(keyword = "理财", category = "理财"),
-                    MerchantRule(keyword = "基金", category = "理财"),
-                    MerchantRule(keyword = "水费", category = "居住"),
-                    MerchantRule(keyword = "电费", category = "居住"),
-                    MerchantRule(keyword = "燃气", category = "居住"),
-                    MerchantRule(keyword = "话费", category = "居住"),
-                    MerchantRule(keyword = "医院", category = "医疗"),
-                    MerchantRule(keyword = "挂号", category = "医疗")
-                )
-                    db.merchantRuleDao().insertAll(defaults)
-                    Log.d(TAG, "✅ Seeded ${defaults.size} merchant rules")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "seedMerchantRulesIfNeeded failed", e)
+    private fun seedMerchantRulesIfNeeded() = launchIo("seedMerchantRulesIfNeeded") {
+        try {
+            val db = AppDatabase.getInstance(this@BookkeepingApp)
+            if (db.merchantRuleDao().count() == 0) {
+                val defaults = listOf(
+                MerchantRule(keyword = "星巴克", category = "餐饮/饮品", note = "咖啡连锁"),
+                MerchantRule(keyword = "瑞幸", category = "餐饮/饮品", note = "咖啡连锁"),
+                MerchantRule(keyword = "喜茶", category = "餐饮/饮品", note = "奶茶连锁"),
+                MerchantRule(keyword = "蜜雪冰城", category = "餐饮/饮品", note = "奶茶连锁"),
+                MerchantRule(keyword = "奶茶", category = "餐饮/饮品"),
+                MerchantRule(keyword = "咖啡", category = "餐饮/饮品"),
+                MerchantRule(keyword = "美团", category = "餐饮/外卖"),
+                MerchantRule(keyword = "饿了么", category = "餐饮/外卖"),
+                MerchantRule(keyword = "外卖", category = "餐饮/外卖"),
+                MerchantRule(keyword = "滴滴", category = "交通", note = "打车"),
+                MerchantRule(keyword = "打车", category = "交通"),
+                MerchantRule(keyword = "地铁", category = "交通"),
+                MerchantRule(keyword = "公交", category = "交通"),
+                MerchantRule(keyword = "高铁", category = "交通"),
+                MerchantRule(keyword = "机票", category = "交通"),
+                MerchantRule(keyword = "拼多多", category = "购物"),
+                MerchantRule(keyword = "淘宝", category = "购物"),
+                MerchantRule(keyword = "京东", category = "购物"),
+                MerchantRule(keyword = "工资", category = "工资"),
+                MerchantRule(keyword = "红包", category = "红包"),
+                MerchantRule(keyword = "信用卡还款", category = "还款"),
+                MerchantRule(keyword = "信用卡", category = "还款"),
+                MerchantRule(keyword = "理财", category = "理财"),
+                MerchantRule(keyword = "基金", category = "理财"),
+                MerchantRule(keyword = "水费", category = "居住"),
+                MerchantRule(keyword = "电费", category = "居住"),
+                MerchantRule(keyword = "燃气", category = "居住"),
+                MerchantRule(keyword = "话费", category = "居住"),
+                MerchantRule(keyword = "医院", category = "医疗"),
+                MerchantRule(keyword = "挂号", category = "医疗")
+            )
+                db.merchantRuleDao().insertAll(defaults)
+                Log.d(TAG, "✅ Seeded ${defaults.size} merchant rules")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "seedMerchantRulesIfNeeded failed", e)
         }
     }
 
     /** 历史数据修复：早期自动记账生成的交易无账本关联，启动时幂等归入默认账本 */
-    private fun fixLegacyAssociations() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                fixNullLedgerTransactions(AppDatabase.getInstance(this@BookkeepingApp))
-            } catch (e: Exception) {
-                Log.e(TAG, "fixLegacyAssociations failed", e)
-            }
+    private fun fixLegacyAssociations() = launchIo("fixLegacyAssociations") {
+        try {
+            fixNullLedgerTransactions(AppDatabase.getInstance(this@BookkeepingApp))
+        } catch (e: Exception) {
+            Log.e(TAG, "fixLegacyAssociations failed", e)
         }
     }
 
     /** 首次启动初始化默认账本和账户 */
-    private fun seedDefaultsIfNeeded() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.getInstance(this@BookkeepingApp)
-                if (db.ledgerDao().getAll().isEmpty()) {
-                    db.ledgerDao().insert(Ledger(name = "日常账", icon = "📒", isDefault = true))
-                    db.ledgerDao().insert(Ledger(name = "工作账", icon = "💼"))
-                    db.ledgerDao().insert(Ledger(name = "旅行账", icon = "✈️"))
-                    Log.d(TAG, "✅ Seeded default ledgers")
-                }
-                if (db.accountDao().getAllIncludingDisabled().isEmpty()) {
-                    db.accountDao().insert(Account(name = "现金", type = Account.AccountType.CASH, icon = "💵"))
-                    db.accountDao().insert(Account(name = "银行卡", type = Account.AccountType.BANK, icon = "💳"))
-                    db.accountDao().insert(Account(name = "微信零钱", type = Account.AccountType.WECHAT, icon = "💬"))
-                    db.accountDao().insert(Account(name = "支付宝", type = Account.AccountType.ALIPAY, icon = "🅰️"))
-                    Log.d(TAG, "✅ Seeded default accounts")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "seedDefaultsIfNeeded failed", e)
+    private fun seedDefaultsIfNeeded() = launchIo("seedDefaultsIfNeeded") {
+        try {
+            val db = AppDatabase.getInstance(this@BookkeepingApp)
+            if (db.ledgerDao().getAll().isEmpty()) {
+                db.ledgerDao().insert(Ledger(name = "日常账", icon = "📒", isDefault = true))
+                db.ledgerDao().insert(Ledger(name = "工作账", icon = "💼"))
+                db.ledgerDao().insert(Ledger(name = "旅行账", icon = "✈️"))
+                Log.d(TAG, "✅ Seeded default ledgers")
             }
+            if (db.accountDao().getAllIncludingDisabled().isEmpty()) {
+                db.accountDao().insert(Account(name = "现金", type = Account.AccountType.CASH, icon = "💵"))
+                db.accountDao().insert(Account(name = "银行卡", type = Account.AccountType.BANK, icon = "💳"))
+                db.accountDao().insert(Account(name = "微信零钱", type = Account.AccountType.WECHAT, icon = "💬"))
+                db.accountDao().insert(Account(name = "支付宝", type = Account.AccountType.ALIPAY, icon = "🅰️"))
+                Log.d(TAG, "✅ Seeded default accounts")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "seedDefaultsIfNeeded failed", e)
         }
     }
 
     /** 首次启动时把硬编码规则写入 DB，后续 Service 全部从 DB 加载 */
-    private fun seedParseRulesIfNeeded() {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.getInstance(this@BookkeepingApp)
-                if (db.parseRuleDao().count() == 0) {
-                    db.parseRuleDao().insertAll(ParseEngine.DEFAULT_RULES)
-                    Log.d(TAG, "✅ Seeded ${ParseEngine.DEFAULT_RULES.size} parse rules to DB")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "seedParseRulesIfNeeded failed", e)
+    private fun seedParseRulesIfNeeded() = launchIo("seedParseRulesIfNeeded") {
+        try {
+            val db = AppDatabase.getInstance(this@BookkeepingApp)
+            if (db.parseRuleDao().count() == 0) {
+                db.parseRuleDao().insertAll(ParseEngine.DEFAULT_RULES)
+                Log.d(TAG, "✅ Seeded ${ParseEngine.DEFAULT_RULES.size} parse rules to DB")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "seedParseRulesIfNeeded failed", e)
         }
     }
 
@@ -165,13 +156,16 @@ class BookkeepingApp : Application() {
     }
 
     private fun writeDebug(msg: String) {
-        try {
-            val f = java.io.File(filesDir, "debug.log")
-            val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                .format(java.util.Date())
-            PrintWriter(FileWriter(f, true)).use { it.appendLine("$ts  $msg") }
-        } catch (e: Exception) {
-            Log.e(TAG, "writeDebug failed", e)
+        FileLog.append(this, "debug.log", msg)
+    }
+
+    /**
+     * 一次性后台任务：Application 启动时跑一次就结束，scope 随 lambda 自动释放。
+     * 失败仅记录日志，不抛给系统（这些都不影响首发阶段 UI，但行为正确性依赖它们）。
+     */
+    private fun launchIo(tag: String, block: suspend () -> Unit) {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try { block() } catch (e: Exception) { Log.e(TAG, "$tag failed", e) }
         }
     }
 
@@ -181,5 +175,27 @@ class BookkeepingApp : Application() {
 
         const val CHANNEL_ID_CAPTURE = "capture_service"
         const val TAG = "Bookkeeping"
+    }
+}
+
+/** 统一文件日志：Service / 短信接收器 / App 三处共用；超 1MB 截断保留后半段，防无限膨胀 */
+internal object FileLog {
+    private const val MAX_BYTES = 1_000_000L
+
+    fun append(context: android.content.Context, fileName: String, msg: String) {
+        try {
+            val f = java.io.File(context.filesDir, fileName)
+            // 轮转：超限时保留后半段（最新日志在尾部，不会丢最近记录）
+            if (f.length() > MAX_BYTES) {
+                val bytes = f.readBytes()
+                f.writeBytes(bytes.copyOfRange(bytes.size / 2, bytes.size))
+            }
+            val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            java.io.PrintWriter(java.io.FileWriter(f, true)).use { it.appendLine("$ts  $msg") }
+            Log.d(BookkeepingApp.TAG, msg)
+        } catch (e: Exception) {
+            Log.e(BookkeepingApp.TAG, "FileLog($fileName) failed: ${e.message}")
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.bookkeeping.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,8 +20,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -29,6 +33,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -203,7 +209,7 @@ fun ManualAddDialog(
                 // 凭证图片落盘：pending → {id}.jpg
                 com.bookkeeping.app.ui.ReceiptStore.finalizePending(context, newId)
                 // 预算超支检查（每自然月最多提醒一次）
-                checkBudgetAndNotify(context)
+                checkBudgetAndNotify(context, ledgerId = selectedLedgerId)
                 // 更新账户余额
                 if (selectedAccountId != null) {
                     val delta = when (selectedType) {
@@ -253,15 +259,21 @@ fun ManualAddDialog(
 
             // ── 顶部导航栏：标题（返回键在底部，账本在下方账户区） ─-
             Row(
-                Modifier.fillMaxWidth().height(52.dp),
+                Modifier.fillMaxWidth().height(48.dp), // 标题栏高度
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
                 Text(
                     "记一笔",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
 
@@ -320,56 +332,55 @@ fun ManualAddDialog(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+                            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), // 金额卡片内边距
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("¥", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = amountColor)
+                        Text("¥", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = amountColor)
                         Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
+                        BasicTextField(    // 金额输入框（无 56dp 最小高度约束，高度=文字行高，不裁切）
                             value = amountText,
                             onValueChange = { input ->
                                 // 只允许数字和小数点，最多2位小数，整数最多9位
                                 val filtered = input.filter { it.isDigit() || it == '.' }
                                 val parts = filtered.split('.')
                                 val valid = when {
-                                    filtered.count { it == '.' } > 1 -> return@OutlinedTextField
+                                    filtered.count { it == '.' } > 1 -> return@BasicTextField
                                     parts.size == 2 && parts[1].length > 2 -> parts[0] + "." + parts[1].take(2)
                                     parts[0].length > 9 -> parts[0].take(9) + (if (parts.size == 2) "." + parts[1].take(2) else "")
                                     else -> filtered
                                 }
                                 amountText = valid
                             },
-                            placeholder = {
-                                Text(
-                                    "0.00",
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                )
-                            },
-                            singleLine = true,
                             textStyle = TextStyle(
-                                fontSize = 28.sp, fontWeight = FontWeight.Bold, color = amountColor
+                                fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = amountColor
                             ),
+                            cursorBrush = SolidColor(amountColor),
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Decimal,
                                 imeAction = ImeAction.Done
                             ),
+                            decorationBox = { inner ->   // 金额输入框占位符
+                                Box {
+                                    if (amountText.isEmpty()) {
+                                        Text(
+                                            "0.00",
+                                            fontSize = 34.sp, // 占位符字体大小
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                        )
+                                    }
+                                    inner()
+                                }
+                            },
                             modifier = Modifier
                                 .weight(1f)
-                                .focusRequester(amountFocus),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                cursorColor = amountColor
-                            )
+                                .focusRequester(amountFocus)
                         )
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))  // 分类选择与金额卡片间距
 
                 // 分类选择（fixedCategory 时锁定为 initialCategory，隐藏网格）
                 if (!fixedCategory) {
@@ -406,7 +417,7 @@ fun ManualAddDialog(
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(6.dp)) // 分类选择与账户选择卡片间距
 
                 // 账户 / 账本选择卡片
                 Card(
@@ -505,7 +516,7 @@ fun ManualAddDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(2.dp)) // 商户/对方与备注间距
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
@@ -515,28 +526,28 @@ fun ManualAddDialog(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp)) // 备注与收据间距
                 com.bookkeeping.app.ui.ReceiptSection(editTxId = null)
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp)) // 收据与与底部按钮间距
             }
 
             // ── 底部：返回 + 保存 ──
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), // 底部按钮间距
+                horizontalArrangement = Arrangement.spacedBy(12.dp) // 返回与保存按钮间距
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(25.dp)
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(22.dp)
                 ) {
                     Text("返回", fontSize = 16.sp)
                 }
                 Button(
                     onClick = { saveRecord() },
                     enabled = canSave,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(25.dp),
+                    modifier = Modifier.weight(1f).height(44.dp),
+                    shape = RoundedCornerShape(22.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = amountColor,
                         disabledContainerColor = amountColor.copy(alpha = 0.3f)

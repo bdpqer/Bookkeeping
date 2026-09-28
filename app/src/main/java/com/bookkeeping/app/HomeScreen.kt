@@ -66,11 +66,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 // ─── 首页：今日汇总 + 最近交易 ─────────────────────────────────
+
+/** 首页四项汇总，单次遍历计算 */
+private data class HomeSums(
+    val todayExpense: Double,
+    val todayIncome: Double,
+    val monthExpense: Double,
+    val monthIncome: Double,
+)
 
 @Composable
 internal fun HomeScreen(
@@ -94,12 +103,29 @@ internal fun HomeScreen(
         else db.transactionDao().observeByLedger(selectedLedgerId!!)
     }.collectAsState(initial = emptyList<Transaction>())
     val recentTransactions = allTransactions.take(8)
-    val todayRange = startOfToday()..endOfToday()
-    val monthRange = startOfMonth()..endOfMonth()
-    val todayExpense = allTransactions.filter { it.type == Transaction.Type.EXPENSE && it.occurredAt in todayRange }.sumOf { it.amount }.round2()
-    val todayIncome = allTransactions.filter { it.type == Transaction.Type.INCOME && it.occurredAt in todayRange }.sumOf { it.amount }.round2()
-    val monthExpense = allTransactions.filter { it.type == Transaction.Type.EXPENSE && it.occurredAt in monthRange }.sumOf { it.amount }.round2()
-    val monthIncome = allTransactions.filter { it.type == Transaction.Type.INCOME && it.occurredAt in monthRange }.sumOf { it.amount }.round2()
+    // 汇总包 remember：仅在交易数据变化或跨天时重算（单次遍历），避免每次重组 4 次全表过滤
+    val homeSums = remember(allTransactions, LocalDate.now().toEpochDay()) {
+        val todayRange = startOfToday()..endOfToday()
+        val monthRange = startOfMonth()..endOfMonth()
+        var tExp = 0.0
+        var tInc = 0.0
+        var mExp = 0.0
+        var mInc = 0.0
+        for (tx in allTransactions) {
+            if (tx.type == Transaction.Type.EXPENSE) {
+                if (tx.occurredAt in todayRange) tExp += tx.amount
+                if (tx.occurredAt in monthRange) mExp += tx.amount
+            } else if (tx.type == Transaction.Type.INCOME) {
+                if (tx.occurredAt in todayRange) tInc += tx.amount
+                if (tx.occurredAt in monthRange) mInc += tx.amount
+            }
+        }
+        HomeSums(tExp.round2(), tInc.round2(), mExp.round2(), mInc.round2())
+    }
+    val todayExpense = homeSums.todayExpense
+    val todayIncome = homeSums.todayIncome
+    val monthExpense = homeSums.monthExpense
+    val monthIncome = homeSums.monthIncome
     var showLoanScreen by remember { mutableStateOf(false) }
     var showLedgerMenu by remember { mutableStateOf(false) }
     var showRecurringScreen by remember { mutableStateOf(false) }

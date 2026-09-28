@@ -16,6 +16,8 @@ interface TransactionDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfNew(tx: Transaction): Long
+    // 仅在 CSV 合并导入时有用：同一文件可能被多次导入，OnConflict.IGNORE 会让
+    // id 已存在的记录返回 -1L 自动跳过。普通单文件导入由于自增 id 不会冲突，-1 永不命中。
 
     @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
     suspend fun getAll(): List<Transaction>
@@ -27,21 +29,31 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
     fun observeByLedger(ledgerId: Long): Flow<List<Transaction>>
 
-    @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    /** 全量导出（含待确认，不含回收站）：CSV 导出用 */
+    @Query("SELECT * FROM transactions WHERE deletedAt = 0 ORDER BY occurredAt DESC")
     suspend fun getAllIncludingUnconfirmed(): List<Transaction>
 
     @Query("SELECT * FROM transactions WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<Transaction>
 
-    @Query("SELECT * FROM transactions WHERE occurredAt BETWEEN :start AND :end AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
-    suspend fun getByTimeRange(start: Long, end: Long): List<Transaction>
+    /** 按账本汇总：预算超支检查与报表专用（避免跨账本累加） */
+    @Query("""
+        SELECT COALESCE(SUM(amount), 0.0) FROM transactions
+        WHERE ledgerId = :ledgerId AND type = :type AND confirmed = 1 AND deletedAt = 0
+          AND occurredAt BETWEEN :start AND :end
+    """)
+    suspend fun sumByLedger(ledgerId: Long, type: String, start: Long, end: Long): Double
 
-    /** 待确认队列：confirmed = false */
+    /** 按账本明细（确认+未删），报表/月历/预算专用 */
+    @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
+    fun observeLedgerConfirmed(ledgerId: Long): Flow<List<Transaction>>
+
+    /** 待确认队列：confirmed = false（Flow 订阅，入库/确认/删除由 Room 自动推送，无需手动刷新） */
     @Query("SELECT * FROM transactions WHERE confirmed = 0 AND deletedAt = 0 ORDER BY occurredAt DESC")
-    suspend fun getPending(): List<Transaction>
+    fun observePending(): Flow<List<Transaction>>
 
     @Query("SELECT COUNT(*) FROM transactions WHERE confirmed = 0 AND deletedAt = 0")
-    suspend fun getPendingCount(): Int
+    fun observePendingCount(): Flow<Int>
 
     /** 确认入账 */
     @Query("UPDATE transactions SET confirmed = 1 WHERE id = :id")

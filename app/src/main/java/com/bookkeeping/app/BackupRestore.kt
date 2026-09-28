@@ -31,6 +31,7 @@ internal suspend fun exportAndShareCsv(context: Context) {
     }
 
     val csv = buildString {
+        append("\uFEFF") // BOM：Excel 中文兼容（导入端 parseCsvLine 已做 trimStart('\uFEFF')）
         appendLine("id,type,amount,category,merchant,source,account,note,is_manual,confidence,occurred_at,raw_text")
         transactions.forEach { tx ->
             appendLine(listOf(
@@ -56,29 +57,12 @@ internal suspend fun exportAndShareCsv(context: Context) {
     val cacheFile = java.io.File(context.cacheDir, fileName)
     cacheFile.writeText(csv, Charsets.UTF_8)
 
-    // 用 FileProvider 获取 content:// URI
-    val fileUri = androidx.core.content.FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        cacheFile
-    )
-
-    // 触发系统分享面板（微信/邮件/网盘/蓝牙都可以）
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/csv"
-        putExtra(Intent.EXTRA_STREAM, fileUri)
-        putExtra(Intent.EXTRA_SUBJECT, "记账记录 ${transactions.size} 条")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-
     withContext(Dispatchers.Main) {
-        context.startActivity(Intent.createChooser(shareIntent, "分享 CSV").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        android.widget.Toast.makeText(
-            context,
-            "已生成 ${transactions.size} 条记录 → 请选择分享目标",
-            android.widget.Toast.LENGTH_LONG
-        ).show()
+        shareCsvFile(
+            context, cacheFile,
+            "记账记录 ${transactions.size} 条",
+            "已生成 ${transactions.size} 条记录 → 请选择分享目标"
+        )
     }
 }
 
@@ -86,6 +70,22 @@ private fun csvEscape(s: Any?): String {
     val str = s?.toString() ?: ""
     val escaped = str.replace("\"", "\"\"").replace("\n", " ").replace("\r", " ")
     return "\"$escaped\""
+}
+
+/** CSV 分享公共尾部：FileProvider URI + 系统分享面板 + 提示（须在主线程调用） */
+private fun shareCsvFile(context: Context, file: java.io.File, subject: String, toast: String) {
+    val fileUri = androidx.core.content.FileProvider.getUriForFile(
+        context, "${context.packageName}.fileprovider", file
+    )
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_STREAM, fileUri)
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "分享 CSV").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_LONG).show()
 }
 
 /** 解析单行 CSV（处理双引号包裹与 "" 转义） */
@@ -164,38 +164,45 @@ internal suspend fun importCsvFromUri(context: Context, uri: android.net.Uri): P
 private const val SQLITE_MAGIC = "SQLite format 3\u0000"
 
 /**
+ * 打包数据库（先合并 WAL 日志）+ 凭证图片到 destFile。
+ * 手动备份与每周自动备份共用。zip 结构：bookkeeping.db + receipts/{txId}.jpg
+ */
+internal suspend fun createBackupZip(context: Context, destFile: java.io.File) = withContext(Dispatchers.IO) {
+    val db = AppDatabase.getInstance(context)
+    // 先把 WAL 日志合并进主文件，确保导出的 .db 是完整数据
+    db.openHelper.writableDatabase
+        .query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)"))
+        .use { it.moveToFirst() }
+
+    val dbFile = context.getDatabasePath("bookkeeping.db")
+    ZipOutputStream(destFile.outputStream().buffered()).use { zip ->
+        // 1. 数据库
+        zip.putNextEntry(ZipEntry("bookkeeping.db"))
+        dbFile.inputStream().use { it.copyTo(zip) }
+        zip.closeEntry()
+        // 2. 凭证图片（filesDir/receipts/{txId}.jpg）
+        val receipts = java.io.File(context.filesDir, "receipts")
+        receipts.listFiles()
+            ?.filter { it.isFile && it.length() > 0 }
+            ?.sortedBy { it.name }
+            ?.forEach { img ->
+                zip.putNextEntry(ZipEntry("receipts/${img.name}"))
+                img.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+    }
+}
+
+/**
  * 备份：checkpoint WAL 后把数据库 + 凭证图片打包成 zip，并弹出系统分享面板。
  * zip 结构：bookkeeping.db + receipts/{txId}.jpg...
  */
 internal suspend fun backupDatabase(context: Context) {
-    val cacheFile = withContext(Dispatchers.IO) {
-        val db = AppDatabase.getInstance(context)
-        // 先把 WAL 日志合并进主文件，确保导出的 .db 是完整数据
-        db.openHelper.writableDatabase
-            .query(androidx.sqlite.db.SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)"))
-            .use { it.moveToFirst() }
-
-        val dbFile = context.getDatabasePath("bookkeeping.db")
-        val fileName = "bookkeeping_backup_${csvFileNameFormat.format(Date())}.zip"
-        val f = java.io.File(context.cacheDir, fileName)
-        ZipOutputStream(f.outputStream().buffered()).use { zip ->
-            // 1. 数据库
-            zip.putNextEntry(ZipEntry("bookkeeping.db"))
-            dbFile.inputStream().use { it.copyTo(zip) }
-            zip.closeEntry()
-            // 2. 凭证图片（filesDir/receipts/{txId}.jpg）
-            val receipts = java.io.File(context.filesDir, "receipts")
-            receipts.listFiles()
-                ?.filter { it.isFile && it.length() > 0 }
-                ?.sortedBy { it.name }
-                ?.forEach { img ->
-                    zip.putNextEntry(ZipEntry("receipts/${img.name}"))
-                    img.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                }
-        }
-        f
-    }
+    val cacheFile = java.io.File(
+        context.cacheDir,
+        "bookkeeping_backup_${csvFileNameFormat.format(Date())}.zip"
+    )
+    createBackupZip(context, cacheFile)
 
     withContext(Dispatchers.Main) {
         val fileUri = androidx.core.content.FileProvider.getUriForFile(
@@ -345,21 +352,11 @@ internal suspend fun exportTransactionsCsv(context: Context) {
     }
 
     withContext(Dispatchers.Main) {
-        val fileUri = androidx.core.content.FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", f
+        shareCsvFile(
+            context, f,
+            "记账助手交易明细导出",
+            "已导出 ${f.name}（${f.length() / 1024}KB）→ 选择保存位置"
         )
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/csv"
-            putExtra(Intent.EXTRA_STREAM, fileUri)
-            putExtra(Intent.EXTRA_SUBJECT, "记账助手交易明细导出")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "分享 CSV 文件").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        android.widget.Toast.makeText(
-            context, "已导出 ${f.name}（${f.length() / 1024}KB）→ 选择保存位置",
-            android.widget.Toast.LENGTH_LONG
-        ).show()
     }
 }
 
@@ -367,9 +364,9 @@ internal suspend fun exportTransactionsCsv(context: Context) {
 
 internal fun refreshServiceRules() {
     try {
-        val context = BookkeepingApp.instance
-        val intent = Intent(context, NotificationCaptureService::class.java)
-            .setAction("com.bookkeeping.app.REFRESH_RULES")
-        context.startService(intent)
+        // Service 声明了 android:permission（系统签名权限），同进程 startService 会
+        // SecurityException 且被吞掉，改用进程内回调钩子直接触发规则重载；
+        // 钩子为 null 说明 Service 未在运行，无需刷新（下次创建时会自动从 DB 加载）。
+        NotificationCaptureService.rulesRefresher?.invoke()
     } catch (_: Exception) { }
 }

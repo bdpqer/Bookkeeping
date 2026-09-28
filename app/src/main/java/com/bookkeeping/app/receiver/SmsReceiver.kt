@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.BookkeepingApp
+import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.service.CaptureLogBus
@@ -19,11 +20,6 @@ import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.FileWriter
-import java.io.PrintWriter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 短信监听：双保险机制
@@ -86,15 +82,16 @@ class SmsReceiver : BroadcastReceiver() {
             if (!context.getSharedPreferences("settings", Context.MODE_PRIVATE)
                     .getBoolean("auto_capture_enabled", true)) return
 
-            // 进程内去重：同一条短信可能被 BroadcastReceiver 和 ContentObserver 同时捕获
-            if (smsId != null) {
-                synchronized(processedIds) {
-                    if (processedIds.contains(smsId)) {
-                        fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
-                        return
-                    }
-                    processedIds.add(smsId)
+            // 进程内去重：同一条短信可能被 BroadcastReceiver 和 ContentObserver 同时捕获。
+            // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+5分钟桶）统一去重；
+            // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±5 分钟）兜底。
+            val dedupKey = (sender + "|" + body + "|" + time / (5 * 60 * 1000)).hashCode().toLong()
+            synchronized(processedIds) {
+                if (processedIds.contains(dedupKey)) {
+                    fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
+                    return
                 }
+                processedIds.add(dedupKey)
             }
 
             // 关键词过滤（只记录疑似支付/银行的短信）
@@ -143,7 +140,7 @@ class SmsReceiver : BroadcastReceiver() {
                         val id = db.transactionDao().insert(tx)
                         fileLog("✅ 短信解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category}")
                         // 预算超支检查（每自然月最多提醒一次）
-                        checkBudgetAndNotify(context)
+                        checkBudgetAndNotify(context, ledgerId = tx.ledgerId)
                     } else {
                         fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
                     }
@@ -187,17 +184,7 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
-        private fun fileLog(msg: String) {
-            val ts = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            val line = "$ts  $msg\n"
-            try {
-                val f = java.io.File(BookkeepingApp.instance.filesDir, "service.log")
-                PrintWriter(FileWriter(f, true)).use { it.append(line) }
-                Log.d(BookkeepingApp.TAG, msg)
-            } catch (e: Exception) {
-                Log.e(BookkeepingApp.TAG, "sms fileLog failed", e)
-            }
-        }
+        private fun fileLog(msg: String) = FileLog.append(BookkeepingApp.instance, "service.log", msg)
     }
 }
 
@@ -229,7 +216,7 @@ class SmsContentObserver(handler: Handler) : ContentObserver(handler) {
                     val id = cursor.getLong(0)
                     val address = cursor.getString(1) ?: ""
                     val body = cursor.getString(2) ?: ""
-                    val date = cursor.getLong(3) * 1000L // Telephony.Sms.DATE 是秒
+                    val date = cursor.getLong(3) // Telephony.Sms.DATE 本身就是毫秒，勿再 ×1000
 
                     SmsReceiver.handleSms(ctx, address, body, date, id, "ContentObserver")
                 }

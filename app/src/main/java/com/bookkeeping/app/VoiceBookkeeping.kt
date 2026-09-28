@@ -253,25 +253,25 @@ internal fun parseChineseNumber(s: String): Double? {
 
 private const val CN_NUM_CLASS = "零一二两三四五六七八九十百千万点"
 
-/** 从识别文本中提取金额：数字+块/元 → X块Y → 中文数字+块/元 → 最后裸数字 */
+/** 口语毛角分位换算：单个阿拉伯或中文数字字符 → 数值，空串返回 null */
+private fun digitOfVoice(s: String): Double? =
+    s.toDoubleOrNull() ?: CN_DIGIT[s.singleOrNull()]?.toDouble()
+
+/** 从识别文本中提取金额：数字+块/元 → X块Y毛Z → 中文数字+块/元 → 最后裸数字 */
 internal fun extractVoiceAmount(text: String): String? {
-    // 1) 阿拉伯数字 + 块/元（含 X块Y毛 的简化形式 X块Y）
-    Regex("(\\d+(?:\\.\\d+)?)\\s*[块钱]\\s*(\\d)?").find(text)?.let { m ->
+    // 1) 阿拉伯数字 + 块/钱/元（含口语小数 X块Y毛Z分）
+    Regex("(\\d+(?:\\.\\d+)?)\\s*[块钱元]\\s*(?:(\\d)(?:[毛角](\\d)分?)?)?").find(text)?.let { m ->
         val x = m.groupValues[1].toDouble()
-        val y = m.groupValues[2]
-        return if (y.isNotEmpty()) (x + y.toDouble() / 10).round2().formatAmount() else x.round2().formatAmount()
+        val mao = m.groupValues[2].toDoubleOrNull() ?: 0.0
+        val fen = m.groupValues[3].toDoubleOrNull() ?: 0.0
+        return (x + mao / 10 + fen / 100).round2().formatAmount()
     }
-    // 2) 中文数字 + 块/元，支持 X块Y
-    Regex("([$CN_NUM_CLASS]+)\\s*[块钱]\\s*([$CN_NUM_CLASS\\d])?").find(text)?.let { m ->
+    // 2) 中文数字 + 块/钱/元，支持 X块Y毛Z
+    Regex("([$CN_NUM_CLASS]+)\\s*[块钱元]\\s*(?:([$CN_NUM_CLASS\\d])(?:[毛角]([$CN_NUM_CLASS\\d])分?)?)?").find(text)?.let { m ->
         val x = parseChineseNumber(m.groupValues[1]) ?: return@let
-        val y = m.groupValues[2]
-        val extra = when {
-            y.isEmpty() -> 0.0
-            y in "0".."9" -> y.toDouble() / 10
-            CN_DIGIT.containsKey(y.single()) -> CN_DIGIT[y.single()]!! / 10.0
-            else -> 0.0
-        }
-        return (x + extra).round2().formatAmount()
+        val mao = digitOfVoice(m.groupValues[2]) ?: 0.0
+        val fen = digitOfVoice(m.groupValues[3]) ?: 0.0
+        return (x + mao / 10 + fen / 100).round2().formatAmount()
     }
     // 3) 兜底：最后一个裸中文数字串（如「晚饭花了三十」，无块/元后缀）
     Regex("[$CN_NUM_CLASS]+").findAll(text)

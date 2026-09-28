@@ -38,13 +38,18 @@ fun setMonthlyBudget(context: Context, amount: Double) {
 
 private const val KEY_BUDGET_NOTIFIED_MONTH = "budget_notified_month"
 private const val CHANNEL_BUDGET_ALERT = "budget_alert"
+/** 通知 ID：勿用 1001，那是通知监听服务的前台通知 ID，撞号会顶掉前台通知 */
+private const val BUDGET_NOTIF_ID = 1002
 
 /**
  * 预算超支检查：本月支出超过预算时发系统通知。
  * 挂钩点：手动记一笔入库后、通知/短信自动记账入库后、周期任务 Worker 执行后。
  * 每个自然月最多提醒一次（记录已提醒月份）。
+ *
+ * `ledgerId`：按当前账本汇总支出，避免跨账本累加导致预算判断失真。
+ * 传 `null` 表示全账本汇总（保留兼容，一般调用方应传当前账本 id）。
  */
-suspend fun checkBudgetAndNotify(context: Context) {
+suspend fun checkBudgetAndNotify(context: Context, ledgerId: Long? = null) {
     try {
         val budget = getMonthlyBudget(context)
         if (budget <= 0) return
@@ -58,9 +63,11 @@ suspend fun checkBudgetAndNotify(context: Context) {
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
         val monthStart = cal.timeInMillis
+        val dao = AppDatabase.getInstance(context).transactionDao()
         val spent = withContext(Dispatchers.IO) {
-            AppDatabase.getInstance(context).transactionDao()
-                .sumAmount("EXPENSE", monthStart, System.currentTimeMillis())
+            // 有账本走按账本汇总（避免工作账大额支出影响日常账预算），无账本兜底全量
+            if (ledgerId != null) dao.sumByLedger(ledgerId, "EXPENSE", monthStart, System.currentTimeMillis())
+            else dao.sumAmount("EXPENSE", monthStart, System.currentTimeMillis())
         }.round2()
         if (spent <= budget) return
 
@@ -80,7 +87,7 @@ suspend fun checkBudgetAndNotify(context: Context) {
             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
-        nm.notify(1001, notif)
+        nm.notify(BUDGET_NOTIF_ID, notif)
         prefs.edit().putString(KEY_BUDGET_NOTIFIED_MONTH, monthKey).apply()
     } catch (_: Exception) {
     }
