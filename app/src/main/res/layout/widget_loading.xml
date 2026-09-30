@@ -1,14 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  小部件首次添加到桌面、Glance 内容尚未渲染完成时的占位布局。
+  背景与最终卡片一致（全透明），避免出现「先一个色块、后变透明」的跳变。
+  文字固定白色，与最终卡片一致，不区分昼夜、不看壁纸明暗。
+  不使用 emoji：部分机型的桌面渲染环境缺少 emoji 字体回退，会显示成色块。
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1C1B1F">
-    <TextView
+    android:background="@android:color/transparent">
+
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:text="📒 记账助手"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <View
+            android:layout_width="3dp"
+            android:layout_height="12dp"
+            android:background="@color/widget_accent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_text"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 </FrameLayout>

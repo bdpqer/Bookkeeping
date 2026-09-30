@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面小部件（全透明底）占位布局用到的颜色。文字固定白色，不区分昼夜、不看壁纸明暗。
+  与 Kotlin 侧 theme/Color.kt 的 WidgetText / WidgetAccent 保持一致。
+-->
+<resources>
+    <color name="widget_text">#FFFFFFFF</color>
+    <color name="widget_accent">#FF4C7DD9</color>
+</resources>

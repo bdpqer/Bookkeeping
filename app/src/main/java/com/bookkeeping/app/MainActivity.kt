@@ -11,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.glance.appwidget.updateAll
+import androidx.lifecycle.lifecycleScope
 import com.bookkeeping.app.data.entity.Transaction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +55,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.BookkeepingTheme
@@ -64,6 +67,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         tryBindListener()
+        // 打开 App 顺手刷新桌面 Widget：否则数据要等 30 分钟刷新周期或下次自动记账才同步
+        lifecycleScope.launch {
+            com.bookkeeping.app.widget.BookkeepingWidget().updateAll(applicationContext)
+        }
         setContent {
             val prefs = remember { getSharedPreferences("settings", MODE_PRIVATE) }
             var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }

@@ -45,8 +45,23 @@ val TransferBlue = Color(0xFF1E88E5)
 /** 暖色卡片背景：借出/提醒等需要突出显示的容器 */
 val WarmCardBg = Color(0xFFFFF3E0)
 
-/** 桌面小部件：次要标签文字色 */
-val WidgetLabelGrey = Color(0xFFAAAAAA)
+// ---------- 桌面小部件配色（全透明底，固定色） ----------
+// 小部件背景全透明，直接透出壁纸。这里**不做明暗自适应**——实测在复杂照片壁纸上
+// 「壁纸主色亮度」判定并不可靠（深绿植物壁纸被误判成亮壁纸，于是给了深色字，
+// 压在深绿上几乎看不清）。因此固定一套：文字纯白 + 提亮过的红/绿金额，
+// 面向中深色壁纸；浅色壁纸下白字会偏淡，这是透明底方案的固有限制。
 
-/** 桌面小部件：分隔线色 */
-val WidgetDivider = Color(0xFF333333)
+/** 小部件全部文字色（标题、各统计标签、日期、时间）：纯白 */
+val WidgetText = Color(0xFFFFFFFF)
+
+/** 小部件支出金额色（提亮暖红，深底可读） */
+val WidgetExpense = Color(0xFFFF7B72)
+
+/** 小部件收入金额色（提亮青绿，深底可读） */
+val WidgetIncome = Color(0xFF56D364)
+
+/** 小部件品牌强调色：标题前的装饰竖条 */
+val WidgetAccent = Color(0xFF4C7DD9)
+
+/** 小部件分隔线色（半透明白，叠加在壁纸上） */
+val WidgetDivider = Color(0x1FFFFFFF)
