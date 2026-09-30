@@ -98,9 +98,9 @@ class SmsReceiver : BroadcastReceiver() {
                     .getBoolean("auto_capture_enabled", true)) return
 
             // 进程内去重：同一条短信可能被 BroadcastReceiver 和 ContentObserver 同时捕获。
-            // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+5分钟桶）统一去重；
-            // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±5 分钟）兜底。
-            val dedupKey = (sender + "|" + body + "|" + time / (5 * 60 * 1000)).hashCode().toLong()
+            // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+3分钟桶）统一去重；
+            // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±3 分钟）兜底。
+            val dedupKey = (sender + "|" + body + "|" + time / (3 * 60 * 1000)).hashCode().toLong()
             if (!markProcessed(dedupKey)) {
                 fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
                 return

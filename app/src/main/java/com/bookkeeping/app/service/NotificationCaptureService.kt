@@ -83,7 +83,7 @@ class NotificationCaptureService : NotificationListenerService() {
         super.onListenerConnected()
         fileLog("✅ onListenerConnected called!")
         Log.i(BookkeepingApp.TAG, "✅ NotificationListenerService connected")
-        android.widget.Toast.makeText(this, "📡 通知监听服务已连接", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(this, "通知监听服务已连接", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -17,8 +17,8 @@ import com.bookkeeping.app.withDefaultAssociation
  */
 object CaptureIngestor {
 
-    /** 去重窗口：同金额、同类型、同商户，±5 分钟内视为同一笔交易 */
-    private const val DUP_WINDOW_MS = 5 * 60 * 1000L
+    /** 去重窗口：同金额、同类型、同商户，±3 分钟内视为同一笔交易 */
+    private const val DUP_WINDOW_MS = 3 * 60 * 1000L
 
     /**
      * @param context      上下文（用于预算超支提醒）
