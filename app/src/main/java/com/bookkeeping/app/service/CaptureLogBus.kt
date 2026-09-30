@@ -1,16 +1,8 @@
 package com.bookkeeping.app.service
 
-import android.app.Notification
-import android.app.NotificationManager
-import android.app.Service
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.bookkeeping.app.BookkeepingApp
+import com.bookkeeping.app.formatTime
 
 /**
  * 实时捕获通知和短信的统一日志管道。
@@ -18,7 +10,11 @@ import com.bookkeeping.app.BookkeepingApp
  */
 object CaptureLogBus {
 
+    /** 自增序号：为每条记录生成稳定的唯一 key，供 LazyColumn 使用 */
+    private val uidSeq = java.util.concurrent.atomic.AtomicLong(0)
+
     data class CaptureEntry(
+        val uid: Long = uidSeq.incrementAndGet(),
         val time: Long,
         val source: String,        // "NOTIFICATION" / "SMS"
         val packageName: String?,  // 通知来源 App 包名
@@ -28,8 +24,7 @@ object CaptureLogBus {
         val fullDump: String,      // 完整字段 dump（调试用）
         val rawText: String        // 原始完整文本（用于后续解析）
     ) {
-        val displayTime: String get() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-            .format(java.util.Date(time))
+        val displayTime: String get() = formatTime(time, "HH:mm:ss")
     }
 
     private val _entries = java.util.concurrent.CopyOnWriteArrayList<CaptureEntry>()

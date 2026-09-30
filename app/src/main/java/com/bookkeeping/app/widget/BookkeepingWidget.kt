@@ -32,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.WidgetDivider
+import com.bookkeeping.app.theme.WidgetLabelGrey
 
 /**
  * 桌面 Widget：今日支出/收入 + 本月支出 + 最近 1 笔
@@ -111,29 +113,29 @@ private fun WidgetContent(d: WidgetData) {
         Spacer(modifier = GlanceModifier.height(6.dp))
 
         JustifiedRow(
-            label = "今日支出", labelColor = Color(0xFFAAAAAA),
+            label = "今日支出", labelColor = WidgetLabelGrey,
             value = "-¥${d.todayExp.formatAmount()}",
             valueColor = Color(0xFFE57373), bold = true
         )
         JustifiedRow(
-            label = "今日收入", labelColor = Color(0xFFAAAAAA),
+            label = "今日收入", labelColor = WidgetLabelGrey,
             value = "+¥${d.todayInc.formatAmount()}",
             valueColor = Color(0xFF81C784), bold = true
         )
 
         Spacer(modifier = GlanceModifier.height(4.dp))
-        Spacer(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)))
+        Spacer(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(WidgetDivider))
         Spacer(modifier = GlanceModifier.height(4.dp))
 
         JustifiedRow(
-            label = "本月支出", labelColor = Color(0xFFAAAAAA),
+            label = "本月支出", labelColor = WidgetLabelGrey,
             value = "-¥${d.monthExp.formatAmount()}",
             valueColor = Color(0xFFFFAB91)
         )
 
         d.latest?.let { tx ->
             Spacer(modifier = GlanceModifier.height(6.dp))
-            Spacer(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)))
+            Spacer(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(WidgetDivider))
             Spacer(modifier = GlanceModifier.height(4.dp))
             val sign = if (tx.type == Transaction.Type.EXPENSE) "-" else "+"
             val color = when (tx.type) {

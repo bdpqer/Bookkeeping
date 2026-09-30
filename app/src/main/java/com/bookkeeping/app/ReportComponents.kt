@@ -48,10 +48,8 @@ import com.bookkeeping.app.data.TransactionDao
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import com.bookkeeping.app.theme.BrandBlue
 
 // ─── 账单报表组件（时间筛选 + 圆环图 + 趋势图） ─────────────────
 
@@ -92,13 +90,33 @@ internal fun ReportStatsCard(all: List<Transaction>) {
         computeRange(mode, pickedAnchor, customStart, customEnd)
     }
 
+    // 单次遍历同时算出：区间支出/收入合计 + 各自的分类汇总（原先是 1 次区间 filter + 2 次类型 filter + 2 次分类遍历）
     val data = remember(all, range.first, range.second) {
-        val inRange = all.filter { it.occurredAt in range.first..range.second }
+        val start = range.first
+        val end = range.second
+        var expense = 0.0
+        var income = 0.0
+        val expTotals = HashMap<String, Double>()
+        val incTotals = HashMap<String, Double>()
+        for (tx in all) {
+            if (tx.occurredAt !in start..end) continue
+            when (tx.type) {
+                Transaction.Type.EXPENSE -> {
+                    expense += tx.amount
+                    expTotals[tx.category] = (expTotals[tx.category] ?: 0.0) + tx.amount
+                }
+                Transaction.Type.INCOME -> {
+                    income += tx.amount
+                    incTotals[tx.category] = (incTotals[tx.category] ?: 0.0) + tx.amount
+                }
+                else -> {}
+            }
+        }
         ReportData(
-            expense = inRange.filter { it.type == Transaction.Type.EXPENSE }.sumOf { it.amount }.round2(),
-            income = inRange.filter { it.type == Transaction.Type.INCOME }.sumOf { it.amount }.round2(),
-            expSlices = buildSlices(inRange, Transaction.Type.EXPENSE),
-            incSlices = buildSlices(inRange, Transaction.Type.INCOME)
+            expense = expense.round2(),
+            income = income.round2(),
+            expSlices = buildSlicesFromTotals(expTotals),
+            incSlices = buildSlicesFromTotals(incTotals)
         )
     }
 
@@ -130,14 +148,14 @@ internal fun ReportStatsCard(all: List<Transaction>) {
                 Spacer(Modifier.height(8.dp))
                 val subText = when (mode) {
                     RangeMode.MONTH_PICK ->
-                        "📅 " + SimpleDateFormat("yyyy年M月", Locale.getDefault()).format(Date(pickedAnchor))
+                        "📅 " + formatTime(pickedAnchor, "yyyy年M月")
                     RangeMode.YEAR_PICK ->
-                        "📅 " + SimpleDateFormat("yyyy年", Locale.getDefault()).format(Date(pickedAnchor))
+                        "📅 " + formatTime(pickedAnchor, "yyyy年")
                     else -> {
                         val s = customStart; val e = customEnd
                         if (s != null && e != null)
-                            "📅 " + SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(s)) +
-                            " ~ " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(e))
+                            "📅 " + formatTime(s, "yyyy-MM-dd") +
+                            " ~ " + formatTime(e, "MM-dd")
                         else "📅 点击选择起止日期"
                     }
                 }
@@ -226,7 +244,7 @@ internal fun ReportStatsCard(all: List<Transaction>) {
             Row(Modifier.fillMaxWidth()) {
                 ReportSummary("支出", data.expense, ExpenseRed)
                 ReportSummary("收入", data.income, IncomeGreen)
-                ReportSummary("结余", data.income - data.expense, Color(0xFF2E5AAC))
+                ReportSummary("结余", data.income - data.expense, BrandBlue)
             }
 
             // 近 6 个月收支趋势
@@ -286,26 +304,36 @@ internal fun androidx.compose.foundation.layout.RowScope.ReportSummary(
 /** 近 6 个月收支趋势：每月支出/收入双柱迷你图 */
 @Composable
 private fun SixMonthTrend(all: List<Transaction>) {
+    // 单次遍历归月：先算好 6 个月的边界，再把每笔交易累加到对应月（原先是每月各 filter 一次全表）
     val months = remember(all) {
         val cal = Calendar.getInstance()
-        (5 downTo 0).map { back ->
+        val bounds = (5 downTo 0).map { back ->
             val c = (cal.clone() as Calendar).apply {
                 set(Calendar.DAY_OF_MONTH, 1)
                 add(Calendar.MONTH, -back)
             }
             val start = c.timeInMillis
             c.add(Calendar.MONTH, 1)
-            val end = c.timeInMillis - 1
-            val inM = all.filter { it.occurredAt in start..end && it.confirmed }
-            Triple(
-                SimpleDateFormat("M月", Locale.getDefault()).format(Date(start)),
-                inM.filter { it.type == Transaction.Type.EXPENSE }.sumOf { it.amount },
-                inM.filter { it.type == Transaction.Type.INCOME }.sumOf { it.amount }
-            )
+            start to (c.timeInMillis - 1)
+        }
+        val expArr = DoubleArray(bounds.size)
+        val incArr = DoubleArray(bounds.size)
+        for (tx in all) {
+            if (!tx.confirmed) continue
+            val idx = bounds.indexOfFirst { tx.occurredAt in it.first..it.second }
+            if (idx < 0) continue
+            when (tx.type) {
+                Transaction.Type.EXPENSE -> expArr[idx] += tx.amount
+                Transaction.Type.INCOME -> incArr[idx] += tx.amount
+                else -> {}
+            }
+        }
+        bounds.mapIndexed { i, (start, _) ->
+            Triple(formatTime(start, "M月"), expArr[i], incArr[i])
         }
     }
     val maxV = months.maxOf { maxOf(it.second, it.third) }.coerceAtLeast(0.01)
-    val currentLabel = SimpleDateFormat("M月", Locale.getDefault()).format(Date())
+    val currentLabel = formatNow("M月")
 
     Column {
         HorizontalDivider()
@@ -364,7 +392,7 @@ private fun MiniSegmented(label: String, selected: Boolean, onClick: () -> Unit)
     Box(
         Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) Color(0xFF2E5AAC) else MaterialTheme.colorScheme.surfaceVariant)
+            .background(if (selected) BrandBlue else MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onClick)
             .padding(horizontal = 22.dp, vertical = 6.dp)
     ) {
@@ -400,13 +428,12 @@ private fun DonutChart(slices: List<TransactionDao.CategorySum>, modifier: Modif
 }
 
 /** 分类切片：Top8 之外合并为「其他」 */
-private fun buildSlices(
-    inRange: List<Transaction>,
-    type: Transaction.Type
+/** 分类切片：按金额降序，超过 9 类时把第 9 名之后合并为「其他」 */
+private fun buildSlicesFromTotals(
+    totals: Map<String, Double>
 ): List<TransactionDao.CategorySum> {
-    val grouped = inRange.filter { it.type == type }
-        .groupBy { it.category }
-        .map { TransactionDao.CategorySum(it.key, it.value.sumOf { v -> v.amount }.round2()) }
+    val grouped = totals
+        .map { TransactionDao.CategorySum(it.key, it.value.round2()) }
         .sortedByDescending { it.total }
     if (grouped.size <= 9) return grouped
     val rest = grouped.drop(8).sumOf { it.total }

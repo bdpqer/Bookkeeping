@@ -72,21 +72,37 @@ private fun csvEscape(s: Any?): String {
     return "\"$escaped\""
 }
 
-/** CSV 分享公共尾部：FileProvider URI + 系统分享面板 + 提示（须在主线程调用） */
-private fun shareCsvFile(context: Context, file: java.io.File, subject: String, toast: String) {
+/**
+ * 文件分享公共尾部：FileProvider URI + 系统分享面板 + 提示。
+ * CSV 导出与 zip 备份共用，仅 mime / 文案不同。须在主线程调用。
+ */
+private fun shareFile(
+    context: Context,
+    file: java.io.File,
+    mime: String,
+    subject: String,
+    chooserTitle: String,
+    toast: String
+) {
     val fileUri = androidx.core.content.FileProvider.getUriForFile(
         context, "${context.packageName}.fileprovider", file
     )
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/csv"
+        type = mime
         putExtra(Intent.EXTRA_STREAM, fileUri)
         putExtra(Intent.EXTRA_SUBJECT, subject)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    context.startActivity(Intent.createChooser(shareIntent, "分享 CSV").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    context.startActivity(
+        Intent.createChooser(shareIntent, chooserTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
     android.widget.Toast.makeText(context, toast, android.widget.Toast.LENGTH_LONG).show()
 }
+
+/** CSV 分享（须在主线程调用） */
+private fun shareCsvFile(context: Context, file: java.io.File, subject: String, toast: String) =
+    shareFile(context, file, "text/csv", subject, "分享 CSV", toast)
 
 /** 解析单行 CSV（处理双引号包裹与 "" 转义） */
 private fun parseCsvLine(line: String): List<String> {
@@ -205,21 +221,14 @@ internal suspend fun backupDatabase(context: Context) {
     createBackupZip(context, cacheFile)
 
     withContext(Dispatchers.Main) {
-        val fileUri = androidx.core.content.FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", cacheFile
+        shareFile(
+            context = context,
+            file = cacheFile,
+            mime = "application/octet-stream",
+            subject = "记账助手备份",
+            chooserTitle = "分享备份文件",
+            toast = "备份已生成（${"%.2f".format(cacheFile.length() / 1024f / 1024f)}MB，含数据库+凭证图片）→ 请选择保存位置（微信/网盘/文件管理器）"
         )
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/octet-stream"
-            putExtra(Intent.EXTRA_STREAM, fileUri)
-            putExtra(Intent.EXTRA_SUBJECT, "记账助手备份")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "分享备份文件").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        android.widget.Toast.makeText(
-            context, "备份已生成（${"%.2f".format(cacheFile.length() / 1024f / 1024f)}MB，含数据库+凭证图片）→ 请选择保存位置（微信/网盘/文件管理器）",
-            android.widget.Toast.LENGTH_LONG
-        ).show()
     }
 }
 

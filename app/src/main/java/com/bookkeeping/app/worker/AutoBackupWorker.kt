@@ -10,10 +10,8 @@ import androidx.work.WorkerParameters
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.createBackupZip
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.bookkeeping.app.formatNow
 
 /**
  * 每周自动备份 Worker：
@@ -32,7 +30,7 @@ class AutoBackupWorker(
             outDir.mkdirs()
             val out = File(
                 outDir,
-                "bookkeeping_auto_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.zip"
+                "bookkeeping_auto_${formatNow("yyyyMMdd_HHmmss")}.zip"
             )
             // 打包逻辑与手动备份共用（WAL 合并 + 数据库 + 凭证图片）
             createBackupZip(context, out)

@@ -1,36 +1,26 @@
 package com.bookkeeping.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.bookkeeping.app.EmptyState
-import com.bookkeeping.app.localDayToUtc
-import com.bookkeeping.app.utcToLocalDayStart
+import com.bookkeeping.app.ReportDatePicker
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.InstallmentPlan
 import com.bookkeeping.app.data.entity.Ledger
-import com.bookkeeping.app.data.entity.RecurringItem
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.embeddedImePadding
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
@@ -43,6 +33,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.formatTime
 
 
 // ─── 账单分期编辑器 ───────────────────────────────
@@ -224,7 +216,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
                 SettingRow(
                     "首笔入账日期",
-                    SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(firstDate))
+                    formatTime(firstDate, "yyyy-MM-dd")
                 ) {
                     showDatePicker = true
                 }
@@ -337,7 +329,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                                             (principal + fee).formatAmount(),
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFFE53935)
+                                            color = DangerRed
                                         )
                                         if (fee > 0) Text(
                                             "本金${principal.formatAmount()} +费${fee.formatAmount()}",
@@ -450,19 +442,12 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
         )
     }
     if (showDatePicker) {
-        val dpState = rememberDatePickerState(initialSelectedDateMillis = localDayToUtc(firstDate))
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    dpState.selectedDateMillis?.let { firstDate = utcToLocalDayStart(it) }
-                    showDatePicker = false
-                }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("取消") }
-            }
-        ) { DatePicker(state = dpState) }
+        ReportDatePicker(
+            initial = firstDate,
+            title = "选择首次还款日期",
+            onDismiss = { showDatePicker = false },
+            onConfirm = { firstDate = it; showDatePicker = false }
+        )
     }
 }
 

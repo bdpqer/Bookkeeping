@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.ParseRule
 import kotlinx.coroutines.launch
+import com.bookkeeping.app.theme.DangerRed
 
 // ─── 规则编辑弹窗 ────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ internal fun RuleEditDialog(
                                 }
 
                                 if (errorMsg.isNotEmpty()) {
-                                    Text(errorMsg, color = Color(0xFFE53935), fontSize = 12.sp)
+                                    Text(errorMsg, color = DangerRed, fontSize = 12.sp)
                                 }
 
                                 Spacer(Modifier.height(4.dp))
@@ -140,7 +141,7 @@ internal fun RuleEditDialog(
                                     refreshServiceRules()
                                     onSaved()
                                 }
-                            }) { Text("删除", color = Color(0xFFE53935)) }
+                            }) { Text("删除", color = DangerRed) }
                         }
                         androidx.compose.material3.TextButton(onClick = onDismiss) { Text("取消") }
                         Spacer(Modifier.width(4.dp))

@@ -1,6 +1,5 @@
 package com.bookkeeping.app
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +22,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,7 +39,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,9 +53,8 @@ import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.bookkeeping.app.theme.BrandBlue
+import com.bookkeeping.app.theme.TransferOrange
 
 // ─── 待确认队列 ─────────────────────────────────────────────
 
@@ -143,7 +139,7 @@ internal fun PendingScreen() {
                                     color = when (tx.type) {
                                         Transaction.Type.EXPENSE -> ExpenseRed
                                         Transaction.Type.INCOME -> IncomeGreen
-                                        Transaction.Type.TRANSFER -> Color(0xFFFF9800)
+                                        Transaction.Type.TRANSFER -> TransferOrange
                                     }
                                 )
                             }
@@ -253,41 +249,23 @@ internal fun TransactionListScreen() {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 ReportSummary("支出", sumExpense, ExpenseRed)
                 ReportSummary("收入", sumIncome, IncomeGreen)
-                ReportSummary("结余", sumIncome - sumExpense, Color(0xFF2E5AAC))
+                ReportSummary("结余", sumIncome - sumExpense, BrandBlue)
             }
         }
 
-        // 标题 + 账本下拉筛选
-        var ledgerMenu by remember { mutableStateOf(false) }
-        val ledgerName =
-            if (selectedLedgerId == null) "全部账本"
-            else ledgers.firstOrNull { it.id == selectedLedgerId }?.name ?: "全部账本"
+        // 标题 + 账本下拉筛选（与首页、借欠/应收等页面共用 LedgerDropdownTitle）
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Spacer(Modifier.width(6.dp))
-            Box {
-                Row(
-                    Modifier.clickable { ledgerMenu = true },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(ledgerName, fontSize = 13.sp, color = Color(0xFF2E5AAC))
-                    Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                DropdownMenu(expanded = ledgerMenu, onDismissRequest = { ledgerMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("📚 全部账本") },
-                        onClick = { selectedLedgerId = null; ledgerMenu = false }
-                    )
-                    ledgers.forEach { led ->
-                        DropdownMenuItem(
-                            text = { Text("${led.icon} ${led.name}") },
-                            onClick = { selectedLedgerId = led.id; ledgerMenu = false }
-                        )
-                    }
-                }
-            }
+            LedgerDropdownTitle(
+                ledgers = ledgers,
+                selectedLedgerId = selectedLedgerId ?: 0L,
+                onSelect = { id -> selectedLedgerId = if (id == 0L) null else id },
+                fontSize = 13.sp,
+                color = BrandBlue
+            )
 
             Spacer(Modifier.weight(1f))
 
@@ -299,14 +277,14 @@ internal fun TransactionListScreen() {
                     RangeMode.TODAY -> "今天"
                     RangeMode.WEEK -> "本周"
                     RangeMode.MONTH_PICK ->
-                        "📅 " + SimpleDateFormat("yyyy年M月", Locale.getDefault()).format(Date(monthAnchor))
+                        "📅 " + formatTime(monthAnchor, "yyyy年M月")
                     RangeMode.YEAR_PICK ->
-                        "📅 " + SimpleDateFormat("yyyy年", Locale.getDefault()).format(Date(monthAnchor))
+                        "📅 " + formatTime(monthAnchor, "yyyy年")
                     RangeMode.CUSTOM -> {
                         val s = customStart; val e = customEnd
                         if (s != null && e != null)
-                            "📅 " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(s)) +
-                                " ~ " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(e))
+                            "📅 " + formatTime(s, "MM-dd") +
+                                " ~ " + formatTime(e, "MM-dd")
                         else "📅 自定义"
                     }
                 }
@@ -314,7 +292,7 @@ internal fun TransactionListScreen() {
                     Modifier.clickable { timeMenu = true },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(timeLabel, fontSize = 13.sp, color = Color(0xFF2E5AAC))
+                    Text(timeLabel, fontSize = 13.sp, color = BrandBlue)
                     Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = timeMenu, onDismissRequest = { timeMenu = false }) {

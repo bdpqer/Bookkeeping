@@ -22,12 +22,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -54,7 +52,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.k2fsa.sherpa.onnx.EndpointConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineParaformerModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
@@ -64,12 +61,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.max
-import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import com.bookkeeping.app.theme.BrandBlue
 
 /**
  * 语音记账：长按钱迹风格大按钮触发，sherpa-onnx 流式 Paraformer 离线识别。
@@ -375,7 +371,7 @@ internal fun VoiceRecordOverlay(
                                 scaleX = if (phase == VoiceSession.Phase.LISTENING) breathe * (1f + level * 0.35f) else 1f
                                 scaleY = if (phase == VoiceSession.Phase.LISTENING) breathe * (1f + level * 0.35f) else 1f
                             }
-                            .background(Color(0xFF2E5AAC).copy(alpha = 0.9f), CircleShape),
+                            .background(BrandBlue.copy(alpha = 0.9f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text("🎤", fontSize = 52.sp)
@@ -429,7 +425,7 @@ internal fun VoiceRecordOverlay(
                     when (phase) {
                         VoiceSession.Phase.LISTENING -> Button(
                             onClick = { session.finish() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E5AAC))
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                         ) { Text("完成", color = Color.White) }
                         VoiceSession.Phase.DONE -> {
                             val p = parseVoicePrefill(partial)
@@ -438,7 +434,7 @@ internal fun VoiceRecordOverlay(
                                 onClick = {
                                     onPrefill(p ?: VoicePrefill("", Transaction.Type.EXPENSE, null, partial))
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E5AAC))
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                             ) { Text("记一笔", color = Color.White) }
                         }
                         else -> OutlinedButton(

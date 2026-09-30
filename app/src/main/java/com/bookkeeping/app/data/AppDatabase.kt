@@ -188,8 +188,16 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     // 兜底迁移：理论上永远不会走到，因为已配齐 v4→v12 所有 Migration。
-                    // 真走到这里说明某次发布忘了写 Migration，用户数据会被清空——务必显著日志。
+                    // 真走到这里说明某次发布忘了写 Migration，用户数据会被清空——通过回调留下最显眼的日志。
                     .fallbackToDestructiveMigration()
+                    .addCallback(object : RoomDatabase.Callback() {
+                        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+                            android.util.Log.wtf(
+                                com.bookkeeping.app.BookkeepingApp.TAG,
+                                "!!! 破坏性迁移触发：某次升级漏写 Migration，用户数据已被清空（version=${db.version}）!!!"
+                            )
+                        }
+                    })
                     .build()
                     .also { INSTANCE = it }
             }

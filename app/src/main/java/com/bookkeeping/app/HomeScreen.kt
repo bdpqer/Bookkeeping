@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -65,11 +63,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import com.bookkeeping.app.theme.BrandBlue
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.TransferOrange
 
 // ─── 首页：今日汇总 + 最近交易 ─────────────────────────────────
 
@@ -93,9 +91,6 @@ internal fun HomeScreen(
     // 账本切换（null = 全部账本）
     var ledgers by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.Ledger>>(emptyList()) }
     var selectedLedgerId by remember { mutableStateOf<Long?>(null) }
-    val selectedLedgerName =
-        if (selectedLedgerId == null) "全部账本"
-        else ledgers.firstOrNull { it.id == selectedLedgerId }?.name ?: "全部账本"
 
     // 交易数据改为 Flow 订阅：数据库变化自动刷新（入库/编辑/删除/导入均无需手动 refresh）
     val allTransactions by remember(selectedLedgerId) {
@@ -137,7 +132,6 @@ internal fun HomeScreen(
         }
     }
     var showLoanScreen by remember { mutableStateOf(false) }
-    var showLedgerMenu by remember { mutableStateOf(false) }
     var showRecurringScreen by remember { mutableStateOf(false) }
     var showReimburseScreen by remember { mutableStateOf(false) }
     var showReceivableScreen by remember { mutableStateOf(false) }
@@ -223,7 +217,7 @@ internal fun HomeScreen(
                             val last = com.bookkeeping.app.worker.AutoBackupWorker.lastBackupAt(context)
                             Text(
                                 if (autoEnabled) {
-                                    if (last > 0) "上次备份：${SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(last))} · 保留最近 4 份"
+                                    if (last > 0) "上次备份：${formatTime(last, "MM-dd HH:mm")} · 保留最近 4 份"
                                     else "开启中 · 首次备份将在后台执行"
                                 } else "关闭中 · 开启后自动备份到应用目录",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -300,27 +294,15 @@ internal fun HomeScreen(
                     modifier = Modifier.clickable { openDrawer() }.padding(2.dp)
                 )
                 Spacer(Modifier.width(4.dp))
-                Box(Modifier.weight(1f), contentAlignment = Alignment.TopStart) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { showLedgerMenu = true }
-                    ) {
-                        Text(selectedLedgerName, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                        Text(" ▾", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    DropdownMenu(expanded = showLedgerMenu, onDismissRequest = { showLedgerMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("全部账本") },
-                            onClick = { selectedLedgerId = null; showLedgerMenu = false }
-                        )
-                        ledgers.forEach { led ->
-                            DropdownMenuItem(
-                                text = { Text("${led.icon} ${led.name}${if (led.isDefault) "（默认）" else ""}") },
-                                onClick = { selectedLedgerId = led.id; showLedgerMenu = false }
-                            )
-                        }
-                    }
-                }
+                LedgerDropdownTitle(
+                    ledgers = ledgers,
+                    selectedLedgerId = selectedLedgerId ?: 0L,
+                    onSelect = { id -> selectedLedgerId = if (id == 0L) null else id },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    showDefaultMark = true
+                )
                 Icon(
                     Icons.Default.Search, contentDescription = "搜索",
                     modifier = Modifier.clickable { showSearchDialog = true }.padding(2.dp)
@@ -335,7 +317,7 @@ internal fun HomeScreen(
                             .align(Alignment.TopEnd)
                             .padding(top = 6.dp, end = 6.dp)
                             .size(7.dp)
-                            .background(Color(0xFFE53935), CircleShape)
+                            .background(DangerRed, CircleShape)
                     )
                 }
             }
@@ -423,7 +405,7 @@ internal fun HomeScreen(
                     Text(
                         "更多明细 >",
                         fontSize = 13.sp,
-                        color = Color(0xFF2E5AAC),
+                        color = BrandBlue,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onNavigate(Tab.LIST) }
@@ -504,7 +486,7 @@ private fun HomeDrawer(
         windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
     ) {
         Column(Modifier.padding(start = 20.dp, end = 14.dp, top = 12.dp, bottom = 8.dp)) {
-            Text("记账助手", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E5AAC))
+            Text("记账助手", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
             Spacer(Modifier.height(2.dp))
             Text("已陪伴 $companionDays 天", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -634,8 +616,7 @@ private fun TransactionSearchDialog(db: AppDatabase, onDismiss: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text(tx.merchant.ifBlank { tx.category }, fontSize = 14.sp, maxLines = 1)
                                 Text(
-                                    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                                        .format(java.util.Date(tx.occurredAt)),
+                                    formatTime(tx.occurredAt, "yyyy-MM-dd"),
                                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -691,7 +672,7 @@ private fun HomeBudgetCard(monthExpense: Double, budget: Double) {
                         Modifier.fillMaxWidth(ratio).height(8.dp).background(
                             when {
                                 monthExpense > budget -> ExpenseRed
-                                ratio > 0.8f -> Color(0xFFFF9800)
+                                ratio > 0.8f -> TransferOrange
                                 else -> IncomeGreen
                             },
                             RoundedCornerShape(4.dp)

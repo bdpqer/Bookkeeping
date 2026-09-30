@@ -13,10 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +30,9 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.LentOrange
+import com.bookkeeping.app.theme.SuccessGreen
+import com.bookkeeping.app.theme.TransferOrange
 
 private val reimburseDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 private val monthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
@@ -181,7 +182,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                     "-¥${monthTotal.formatAmount()}",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (tab == 0) Color(0xFFFF9800) else Color(0xFF4CAF50)
+                                    color = if (tab == 0) TransferOrange else SuccessGreen
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(if (isExpanded) "▾" else "▸", fontSize = 12.sp)
@@ -258,7 +259,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                     "合计 ¥${selectedTotal.formatAmount()}",
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selectedIds.isNotEmpty()) Color(0xFFEF6C00)
+                                    color = if (selectedIds.isNotEmpty()) LentOrange
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(Modifier.width(12.dp))
@@ -373,7 +374,7 @@ private fun ReimburseItemRow(
 
     val emoji = categoryEmoji(tx.category)
     val dateStr = reimburseDateFormat.format(Date(tx.occurredAt))
-    val amountColor = if (isPending) Color(0xFFFF9800) else Color(0xFF4CAF50)
+    val amountColor = if (isPending) TransferOrange else SuccessGreen
     val accountSuffix = accountName?.let { " · $it" } ?: ""
 
     Card(

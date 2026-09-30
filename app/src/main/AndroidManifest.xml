@@ -12,8 +12,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 常规（全离线 App 无网络代码；实现 WebDAV 云备份时再申请 INTERNET） -->
-    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 录音（语音记账）；全离线 App 无网络代码，实现 WebDAV 云备份时再申请 INTERNET -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application

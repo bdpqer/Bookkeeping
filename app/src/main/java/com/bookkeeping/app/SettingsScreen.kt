@@ -64,6 +64,8 @@ import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.launch
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.TransferBlue
 
 // ─── 设置（调试面板 + 权限检查） ──────────────────────────────
 
@@ -91,11 +93,12 @@ internal fun SettingsScreen(
 
     fun loadAll() {
         scope.launch {
-            rules = AppDatabase.getInstance(context).parseRuleDao().getAll()
-            accounts = AppDatabase.getInstance(context).accountDao().getAllIncludingDisabled()
-            ledgers = AppDatabase.getInstance(context).ledgerDao().getAll()
-            budgetMap = AppDatabase.getInstance(context).budgetDao().getAll()
-                .associate { it.ledgerId to it.monthlyAmount }
+            // 复用同一个 db 实例，避免连续 4 次 getInstance
+            val db = AppDatabase.getInstance(context)
+            rules = db.parseRuleDao().getAll()
+            accounts = db.accountDao().getAllIncludingDisabled()
+            ledgers = db.ledgerDao().getAll()
+            budgetMap = db.budgetDao().getAll().associate { it.ledgerId to it.monthlyAmount }
         }
     }
 
@@ -230,7 +233,7 @@ internal fun SettingsScreen(
                         Column {
                             Text("启动/回到 App 时锁定", fontSize = 14.sp)
                             if (lockEnabled && !hasPin) {
-                                Text("⚠️ 尚未设置 PIN", fontSize = 11.sp, color = Color(0xFFE53935))
+                                Text("⚠️ 尚未设置 PIN", fontSize = 11.sp, color = DangerRed)
                             }
                         }
                         androidx.compose.material3.Switch(
@@ -333,7 +336,7 @@ internal fun SettingsScreen(
                                         AppDatabase.getInstance(context).accountDao().delete(acc.id)
                                         loadAll()
                                     }
-                                }) { Text("删除", color = Color(0xFFE53935), fontSize = 12.sp) }
+                                }) { Text("删除", color = DangerRed, fontSize = 12.sp) }
                             }
                         }
                         if (acc != accounts.lastOrNull()) HorizontalDivider()
@@ -396,7 +399,7 @@ internal fun SettingsScreen(
                                         AppDatabase.getInstance(context).budgetDao().deleteByLedger(led.id)
                                         loadAll()
                                     }
-                                }) { Text("删除", color = Color(0xFFE53935), fontSize = 12.sp) }
+                                }) { Text("删除", color = DangerRed, fontSize = 12.sp) }
                             }
                         }
                         if (led != ledgers.lastOrNull()) HorizontalDivider()
@@ -631,7 +634,7 @@ internal fun SettingsScreen(
                 }
             }
         } else {
-            items(entries, key = { System.identityHashCode(it) }) { entry ->
+            items(entries, key = { it.uid }) { entry ->
                 CaptureEntryRow(entry)
             }
         }
@@ -677,7 +680,7 @@ private fun PermissionRow(
 
 @Composable
 private fun CaptureEntryRow(entry: CaptureLogBus.CaptureEntry) {
-    val color = if (entry.source == "NOTIFICATION") Color(0xFF1E88E5) else Color(0xFF8E24AA)
+    val color = if (entry.source == "NOTIFICATION") TransferBlue else Color(0xFF8E24AA)
     val label = if (entry.source == "NOTIFICATION") "📱" else "💬"
     val detail = (entry.packageName ?: entry.sender ?: "").take(20)
 

@@ -1,15 +1,14 @@
 package com.bookkeeping.app.ui
 
+import com.bookkeeping.app.categoryEmoji
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,10 +37,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +54,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.BrandBlue
 
 private val deletedTimeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 private val occurredTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -209,7 +207,7 @@ private fun DeletedTxItem(
     val isExpense = tx.type == Transaction.Type.EXPENSE
     val isTransfer = tx.type == Transaction.Type.TRANSFER
     val amountColor = when {
-        isTransfer -> Color(0xFF2E5AAC)
+        isTransfer -> BrandBlue
         isExpense -> ExpenseRed
         else -> IncomeGreen
     }
@@ -227,7 +225,7 @@ private fun DeletedTxItem(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(emojiFor(tx.category), fontSize = 24.sp)
+            Text(categoryEmoji(tx.category), fontSize = 24.sp)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,7 +277,7 @@ private fun DeletedTxItem(
                 Text(
                     "恢复",
                     fontSize = 13.sp,
-                    color = Color(0xFF2E5AAC),
+                    color = BrandBlue,
                     modifier = Modifier
                         .clickable(onClick = onRestore)
                         .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -297,21 +295,3 @@ private fun DeletedTxItem(
     }
 }
 
-private fun emojiFor(category: String): String = when {
-    category.contains("购物") -> "🛒"
-    category.contains("餐饮") -> "🍜"
-    category.contains("饮品") || category.contains("咖啡") -> "☕"
-    category.contains("居住") || category.contains("房租") -> "🏠"
-    category.contains("交通") -> "🚗"
-    category.contains("工资") -> "💰"
-    category.contains("红包") -> "🧧"
-    category.contains("人情") -> "🤝"
-    category.contains("还款") -> "💳"
-    category.contains("娱乐") -> "🎮"
-    category.contains("医疗") -> "💊"
-    category.contains("还账") -> "✅"
-    category.contains("借出") -> "🤝"
-    category.contains("借入") -> "🤝"
-    category.contains("报销") -> "🧾"
-    else -> "📝"
-}

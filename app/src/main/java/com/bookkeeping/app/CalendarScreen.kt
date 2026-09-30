@@ -74,13 +74,9 @@ internal fun CalendarScreen() {
     val cal = Calendar.getInstance()
     var viewYearMonth by remember { mutableStateOf(cal.clone() as Calendar) }
     var selectedDayKey by remember { mutableStateOf<Long?>(null) }
-    // 当月交易明细（按当前账本，已确认未删除）。Flow 订阅：新增/确认/删除自动刷新。
-    val currentLedgerId by remember { mutableStateOf<Long?>(null) }   // 后续接 LedgerDropdown 时改
-    val ledgerKey = currentLedgerId
-    val monthTxs by remember(ledgerKey) {
-        if (ledgerKey != null) db.transactionDao().observeByLedger(ledgerKey)
-        else db.transactionDao().observeAll()
-    }.collectAsState(initial = emptyList())
+    // 当月交易明细（已确认未删除）。Flow 订阅：新增/确认/删除自动刷新。
+    // 将来接入账本筛选时，改为 remember(ledgerId) { dao.observeByLedger(ledgerId) } 即可。
+    val monthTxs by remember { db.transactionDao().observeAll() }.collectAsState(initial = emptyList())
     // 当月按天汇总：依赖 monthTxs + viewYearMonth，remember 避免每次重组重算
     val daySums = remember(monthTxs, viewYearMonth) {
         val y = viewYearMonth.get(Calendar.YEAR)
@@ -122,8 +118,11 @@ internal fun CalendarScreen() {
             IconButton(onClick = {
                 viewYearMonth = (viewYearMonth.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
             }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-            val sdf = java.text.SimpleDateFormat("yyyy年 M月", java.util.Locale.CHINA)
-            Text(sdf.format(viewYearMonth.time), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                formatTime(viewYearMonth.timeInMillis, "yyyy年 M月"),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
             IconButton(onClick = {
                 viewYearMonth = (viewYearMonth.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
             }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) }

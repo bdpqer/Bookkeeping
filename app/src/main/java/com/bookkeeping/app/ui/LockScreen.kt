@@ -11,11 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -39,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import java.security.MessageDigest
+import com.bookkeeping.app.theme.DangerRed
 
 /**
  * 锁定状态（进程级）。离开 App（onPause）时置 false，重新进入需解锁。
@@ -172,7 +170,7 @@ fun LockOverlay(onUnlocked: () -> Unit) {
 
             Spacer(Modifier.height(8.dp))
             if (errorText.isNotBlank()) {
-                Text(errorText, color = Color(0xFFE53935), fontSize = 13.sp)
+                Text(errorText, color = DangerRed, fontSize = 13.sp)
             } else if (biometricEnabled) {
                 Text(
                     "👆 或点击下方指纹解锁",
@@ -290,7 +288,7 @@ fun PinSetupDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
                 )
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text(it, color = DangerRed, fontSize = 12.sp)
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(

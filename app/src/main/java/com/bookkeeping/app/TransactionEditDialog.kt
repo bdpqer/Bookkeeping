@@ -1,7 +1,6 @@
 package com.bookkeeping.app
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,14 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,7 +36,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,11 +47,10 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
-import com.bookkeeping.app.theme.ExpenseRed
-import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.bookkeeping.app.theme.DangerRed
 
 // ─── 交易编辑弹窗 ────────────────────────────────────────────
 
@@ -138,7 +131,7 @@ fun TransactionEditDialog(
                         }
                         onDeleted()
                     }
-                }) { Text("🗑 删除", color = Color(0xFFE53935)) }
+                }) { Text("🗑 删除", color = DangerRed) }
             }
 
             // 类型 Tab
@@ -163,11 +156,7 @@ fun TransactionEditDialog(
             }
 
             // 分类 + 金额行
-            val amountColor = when (selectedType) {
-                Transaction.Type.EXPENSE -> ExpenseRed
-                Transaction.Type.INCOME -> IncomeGreen
-                Transaction.Type.TRANSFER -> MaterialTheme.colorScheme.primary
-            }
+            val amountColor = amountColorFor(selectedType)
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -188,15 +177,7 @@ fun TransactionEditDialog(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { input ->
-                        val filtered = input.filter { it.isDigit() || it == '.' }
-                        val parts = filtered.split('.')
-                        val valid = when {
-                            filtered.count { it == '.' } > 1 -> return@OutlinedTextField
-                            parts.size == 2 && parts[1].length > 2 -> parts[0] + "." + parts[1].take(2)
-                            parts[0].length > 9 -> parts[0].take(9) + (if (parts.size == 2) "." + parts[1].take(2) else "")
-                            else -> filtered
-                        }
-                        amountText = valid
+                        amountText = sanitizeAmountInput(input) ?: return@OutlinedTextField
                     },
                     label = { Text("金额") },
                     singleLine = true,
@@ -213,60 +194,40 @@ fun TransactionEditDialog(
 
             // 可滚动表单：分类网格 + 账户 + 账本 + 备注 + 凭证
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                categories.chunked(4).forEach { rowCats ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowCats.forEach { cat ->
-                            val isSel = cat == selectedCategory
-                            Box(
-                                Modifier.weight(1f).height(38.dp).background(
-                                    if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    RoundedCornerShape(19.dp)
-                                ).clickable { selectedCategory = cat },
-                                contentAlignment = Alignment.Center
-                            ) { Text(cat, fontSize = 12.sp, maxLines = 1, color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface) }
-                        }
-                        repeat(4 - rowCats.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
+                TxCategoryGrid(
+                    categories = categories,
+                    selectedCategory = selectedCategory,
+                    onSelect = { selectedCategory = it },
+                    selectedContainer = MaterialTheme.colorScheme.primary,
+                    unselectedContainer = MaterialTheme.colorScheme.surfaceVariant,
+                    selectedContent = MaterialTheme.colorScheme.onPrimary,
+                    unselectedContent = MaterialTheme.colorScheme.onSurface,
+                    itemHeight = 38.dp,
+                    hSpacing = 8.dp,
+                    vSpacing = 8.dp,
+                    corner = 19.dp,
+                    fontSize = 12.sp
+                )
 
                 Spacer(Modifier.height(8.dp))
 
                 if (accounts.isNotEmpty()) {
-                    var accMenu by remember { mutableStateOf(false) }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("付款账户", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        Box {
-                            Row(Modifier.clickable { accMenu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(accounts.firstOrNull { it.id == selectedAccountId }?.let { "${it.icon} ${it.name}" } ?: "", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            DropdownMenu(expanded = accMenu, onDismissRequest = { accMenu = false }) {
-                                accounts.forEach { acc ->
-                                    DropdownMenuItem(text = { Text("${acc.icon} ${acc.name}") }, onClick = { selectedAccountId = acc.id; accMenu = false })
-                                }
-                            }
-                        }
-                    }
+                    TxAccountRow(
+                        accounts = accounts,
+                        selectedAccountId = selectedAccountId,
+                        label = "付款账户",
+                        onSelect = { selectedAccountId = it },
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
                 }
 
                 if (ledgers.isNotEmpty()) {
-                    var ledMenu by remember { mutableStateOf(false) }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("记账账本", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        Box {
-                            Row(Modifier.clickable { ledMenu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(ledgers.firstOrNull { it.id == selectedLedgerId }?.let { "${it.icon} ${it.name}" } ?: "", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            DropdownMenu(expanded = ledMenu, onDismissRequest = { ledMenu = false }) {
-                                ledgers.forEach { led ->
-                                    DropdownMenuItem(text = { Text("${led.icon} ${led.name}") }, onClick = { selectedLedgerId = led.id; ledMenu = false })
-                                }
-                            }
-                        }
-                    }
+                    TxLedgerRow(
+                        ledgers = ledgers,
+                        selectedLedgerId = selectedLedgerId,
+                        onSelect = { selectedLedgerId = it },
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
                 }
 
                 Spacer(Modifier.height(6.dp))

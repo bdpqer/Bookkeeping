@@ -9,7 +9,6 @@ import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import com.bookkeeping.app.data.entity.Transaction
@@ -57,7 +56,8 @@ import kotlin.math.roundToInt
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.BookkeepingTheme
-import kotlinx.coroutines.launch
+import com.bookkeeping.app.theme.BrandBlue
+import com.bookkeeping.app.theme.DangerRed
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -216,7 +216,7 @@ private fun MainScaffold(
                             if (pendingCount > 0) {
                                 Badge(
                                     modifier = Modifier.align(Alignment.TopEnd).size(16.dp),
-                                    containerColor = Color(0xFFE53935),
+                                    containerColor = DangerRed,
                                     contentColor = Color.White
                                 ) {
                                     Text(pendingCount.toString(), fontSize = 9.sp)
@@ -289,7 +289,7 @@ private fun MainScaffold(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("+", fontSize = 30.sp, color = Color(0xFF2E5AAC), fontWeight = FontWeight.Medium)
+                    Text("+", fontSize = 30.sp, color = BrandBlue, fontWeight = FontWeight.Medium)
                 }
             }
         }

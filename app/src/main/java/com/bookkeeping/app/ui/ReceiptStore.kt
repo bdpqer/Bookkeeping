@@ -30,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import java.io.File
+import com.bookkeeping.app.theme.DangerRed
 
 /**
  * 交易凭证（小票/发票照片）存储。
@@ -184,7 +184,7 @@ fun ReceiptSection(editTxId: Long? = null) {
             }) { Text("🖼 相册") }
             if (hasPhoto) {
                 TextButton(onClick = { targetFile.delete(); version++ }) {
-                    Text("删除", color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text("删除", color = DangerRed, fontSize = 12.sp)
                 }
             }
         }

@@ -38,8 +38,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.BrandBlue
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.TransferOrange
+import com.bookkeeping.app.theme.WarmCardBg
+import com.bookkeeping.app.formatTime
 
-internal val BlueColor = Color(0xFF2E5AAC)
+internal val BlueColor = BrandBlue
 
 // ─── 入口页 ───────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,7 +120,6 @@ fun RecurringScreen(onClose: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
 
-                    val isEmpty = (filter != 2 && recurring.isEmpty()) || (filter != 1 && plans.isEmpty())
                     if ((filter == 0 && recurring.isEmpty() && plans.isEmpty()) ||
                         (filter == 1 && recurring.isEmpty()) ||
                         (filter == 2 && plans.isEmpty())
@@ -279,9 +283,9 @@ private fun RecurringRow(
         RecurringItem.Period.MONTHLY -> "每月${item.dayOfMonth}号"
         RecurringItem.Period.YEARLY -> "每年${item.dayOfMonth}号"
     }
-    val modeColor = if (item.mode == RecurringItem.Mode.AUTO_TX) BlueColor else Color(0xFFFF9800)
+    val modeColor = if (item.mode == RecurringItem.Mode.AUTO_TX) BlueColor else TransferOrange
     val modeText = if (item.mode == RecurringItem.Mode.AUTO_TX) "自动记账" else "账单提醒"
-    val nextRun = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(item.nextRunAt))
+    val nextRun = formatTime(item.nextRunAt, "yyyy-MM-dd")
     val dim = !item.isEnabled
 
     Card(
@@ -361,7 +365,7 @@ private fun InstallmentRow(
     }
     val progress = plan.paidPeriods.toFloat() / plan.installments
     val remainingText = if (done) "" else remaining.formatAmount()
-    val dueDateText = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(nextDue))
+    val dueDateText = formatTime(nextDue, "yyyy-MM-dd")
     val statusText = if (done) " · 已结清" else " · ${if (isOverdue) "已逾期，下期 " else "下期 "}$dueDateText"
 
     Card(
@@ -373,7 +377,7 @@ private fun InstallmentRow(
                 Box(
                     Modifier
                         .size(38.dp)
-                        .background(Color(0xFFFFF3E0), RoundedCornerShape(19.dp)),
+                        .background(WarmCardBg, RoundedCornerShape(19.dp)),
                     contentAlignment = Alignment.Center
                 ) { Text("💳", fontSize = 17.sp) }
                 Spacer(Modifier.width(10.dp))
@@ -394,7 +398,7 @@ private fun InstallmentRow(
                             if (ledgerName != null) append(" · $ledgerName")
                         },
                         fontSize = 11.sp,
-                        color = if (isOverdue) Color(0xFFE53935)
+                        color = if (isOverdue) DangerRed
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -405,7 +409,7 @@ private fun InstallmentRow(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (done) MaterialTheme.colorScheme.onSurfaceVariant
-                    else Color(0xFFE53935)
+                    else DangerRed
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -486,7 +490,7 @@ private fun InstallmentDetailDialog(
                                 amountText,
                                 fontSize = 13.sp,
                                 color = if (paid) MaterialTheme.colorScheme.onSurfaceVariant
-                                else Color(0xFFE53935)
+                                else DangerRed
                             )
                         }
                     }
@@ -495,7 +499,7 @@ private fun InstallmentDetailDialog(
         },
         confirmButton = {
             TextButton(onClick = onDeleted) {
-                Text("删除计划", color = Color(0xFFE53935))
+                Text("删除计划", color = DangerRed)
             }
         },
         dismissButton = {

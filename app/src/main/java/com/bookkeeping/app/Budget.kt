@@ -9,10 +9,7 @@ import com.bookkeeping.app.data.entity.Budget
 import com.bookkeeping.app.service.NotificationCaptureService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 // ─── 工具方法 ─────────────────────────────────────────────
 
@@ -27,12 +24,6 @@ fun isNotificationListenerEnabled(context: Context): Boolean {
 private const val CHANNEL_BUDGET_ALERT = "budget_alert"
 /** 通知 ID：勿用 1001，那是通知监听服务的前台通知 ID，撞号会顶掉前台通知 */
 private const val BUDGET_NOTIF_ID = 1002
-
-/** 读取某账本预算；无记录返回 0（= 未设置预算） */
-suspend fun getBudgetForLedger(context: Context, ledgerId: Long): Double {
-    val db = AppDatabase.getInstance(context)
-    return db.budgetDao().getByLedger(ledgerId)?.monthlyAmount ?: 0.0
-}
 
 /** 设置某账本预算；amount <= 0 表示取消预算（删除记录） */
 suspend fun setBudgetForLedger(context: Context, ledgerId: Long, amount: Double) {
@@ -73,7 +64,7 @@ private suspend fun checkBudgetAndNotifyForLedger(context: Context, ledgerId: Lo
         val budgetRow = db.budgetDao().getByLedger(ledgerId) ?: return // 该账本未设预算
         val budget = budgetRow.monthlyAmount
         if (budget <= 0) return
-        val monthKey = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
+        val monthKey = formatNow("yyyy-MM")
         if (budgetRow.notifiedMonth == monthKey) return // 该账本本月已提醒
 
         val cal = Calendar.getInstance().apply {

@@ -65,6 +65,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.BrandBlueDeep
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.LentOrange
+import com.bookkeeping.app.theme.SuccessGreen
+import com.bookkeeping.app.theme.WarmCardBg
 
 private val debtDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
@@ -130,7 +135,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
             ) {
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    colors = CardDefaults.cardColors(containerColor = WarmCardBg),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(Modifier.padding(14.dp)) {
@@ -139,7 +144,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                             "¥${totalLent.formatAmount()}",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFEF6C00)
+                            color = LentOrange
                         )
                     }
                 }
@@ -154,7 +159,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                             "¥${totalBorrowed.formatAmount()}",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1565C0)
+                            color = BrandBlueDeep
                         )
                     }
                 }
@@ -240,7 +245,7 @@ private fun DebtItem(
                         .width(4.dp)
                         .height(36.dp)
                         .background(
-                            if (isLent) Color(0xFFEF6C00) else Color(0xFF1565C0),
+                            if (isLent) LentOrange else BrandBlueDeep,
                             RoundedCornerShape(2.dp)
                         )
                 )
@@ -252,10 +257,10 @@ private fun DebtItem(
                         Text(
                             if (isLent) "借出" else "借入",
                             fontSize = 11.sp,
-                            color = if (isLent) Color(0xFFEF6C00) else Color(0xFF1565C0),
+                            color = if (isLent) LentOrange else BrandBlueDeep,
                             modifier = Modifier
                                 .background(
-                                    (if (isLent) Color(0xFFEF6C00) else Color(0xFF1565C0)).copy(alpha = 0.1f),
+                                    (if (isLent) LentOrange else BrandBlueDeep).copy(alpha = 0.1f),
                                     RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
@@ -272,12 +277,12 @@ private fun DebtItem(
                         "¥${debt.amount.formatAmount()}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
-                        color = if (isLent) Color(0xFFEF6C00) else Color(0xFF1565C0)
+                        color = if (isLent) LentOrange else BrandBlueDeep
                     )
                     Text(
                         if (debt.settled) "✅ 已结清" else "剩 ¥${debt.remaining.formatAmount()}",
                         fontSize = 11.sp,
-                        color = if (debt.settled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (debt.settled) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -285,15 +290,15 @@ private fun DebtItem(
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth().height(4.dp),
-                color = if (debt.settled) Color(0xFF4CAF50)
-                else if (isLent) Color(0xFFEF6C00)
-                else Color(0xFF1565C0),
+                color = if (debt.settled) SuccessGreen
+                else if (isLent) LentOrange
+                else BrandBlueDeep,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDelete) {
-                    Text("删除", fontSize = 12.sp, color = Color(0xFFE53935))
+                    Text("删除", fontSize = 12.sp, color = DangerRed)
                 }
                 if (!debt.settled) {
                     TextButton(onClick = onRepay) {
@@ -390,7 +395,7 @@ private fun AddDebtDialog(ledgers: List<Ledger>, forcedLedgerId: Long?, onDismis
                 )
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text(it, color = DangerRed, fontSize = 12.sp)
                 }
             }
         },
@@ -480,7 +485,7 @@ private fun RepayDebtDialog(
                 )
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text(it, color = DangerRed, fontSize = 12.sp)
                 }
             }
         },

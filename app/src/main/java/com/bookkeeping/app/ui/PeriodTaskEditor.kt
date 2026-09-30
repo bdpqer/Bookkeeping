@@ -1,47 +1,33 @@
 package com.bookkeeping.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.bookkeeping.app.EmptyState
-import com.bookkeeping.app.localDayToUtc
-import com.bookkeeping.app.utcToLocalDayStart
+import com.bookkeeping.app.ReportDatePicker
 import com.bookkeeping.app.data.AppDatabase
-import com.bookkeeping.app.data.entity.Account
-import com.bookkeeping.app.data.entity.InstallmentPlan
 import com.bookkeeping.app.data.entity.RecurringItem
-import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.embeddedImePadding
-import com.bookkeeping.app.data.entity.installmentPeriodAmounts
 import com.bookkeeping.app.worker.RecurringWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.formatTime
 
 
 // ─── 周期任务编辑器 ───────────────────────────────
@@ -174,7 +160,7 @@ internal fun PeriodTaskEditor(
                             RecurringWorker.triggerNow(context)
                             onBack()
                         }
-                    }) { Text("🗑 删除", color = Color(0xFFE53935)) }
+                    }) { Text("🗑 删除", color = DangerRed) }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -295,7 +281,7 @@ internal fun PeriodTaskEditor(
             // 首笔入账日期
             SettingRow(
                 "首笔入账日期",
-                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(firstDate))
+                formatTime(firstDate, "yyyy-MM-dd")
             ) {
                 showFirstDatePicker = true
             }
@@ -382,7 +368,7 @@ internal fun PeriodTaskEditor(
                     Spacer(Modifier.height(8.dp))
                     SettingRow(
                         "结束日期",
-                        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(endDate))
+                        formatTime(endDate, "yyyy-MM-dd")
                     ) {
                         showEndDatePicker = true
                     }
@@ -394,34 +380,20 @@ internal fun PeriodTaskEditor(
     }
 
     if (showFirstDatePicker) {
-        val dpState = rememberDatePickerState(initialSelectedDateMillis = localDayToUtc(firstDate))
-        DatePickerDialog(
-            onDismissRequest = { showFirstDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    dpState.selectedDateMillis?.let { firstDate = utcToLocalDayStart(it) }
-                    showFirstDatePicker = false
-                }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showFirstDatePicker = false }) { Text("取消") }
-            }
-        ) { DatePicker(state = dpState) }
+        ReportDatePicker(
+            initial = firstDate,
+            title = "选择开始日期",
+            onDismiss = { showFirstDatePicker = false },
+            onConfirm = { firstDate = it; showFirstDatePicker = false }
+        )
     }
     if (showEndDatePicker) {
-        val dpState = rememberDatePickerState(initialSelectedDateMillis = localDayToUtc(endDate))
-        DatePickerDialog(
-            onDismissRequest = { showEndDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    dpState.selectedDateMillis?.let { endDate = utcToLocalDayStart(it) }
-                    showEndDatePicker = false
-                }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEndDatePicker = false }) { Text("取消") }
-            }
-        ) { DatePicker(state = dpState) }
+        ReportDatePicker(
+            initial = endDate,
+            title = "选择结束日期",
+            onDismiss = { showEndDatePicker = false },
+            onConfirm = { endDate = it; showEndDatePicker = false }
+        )
     }
 
     // 捕获模式记一笔弹窗：输入金额/用途 → 回填到周期任务字段

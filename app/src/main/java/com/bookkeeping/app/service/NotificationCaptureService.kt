@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
@@ -16,9 +15,7 @@ import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
-import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.formatAmount
-import com.bookkeeping.app.withDefaultAssociation
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +34,7 @@ class NotificationCaptureService : NotificationListenerService() {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val db by lazy { AppDatabase.getInstance(this) }
 
-    /** 通知侧内存去重：key=金额|类型|来源包，3 分钟内同 key 视为同一通知重投，跳过入库 */
+    /** 通知侧内存去重：key=来源包|原文，3 分钟内同 key 视为同一通知重投，跳过入库 */
     private val lastInsertedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
     @Volatile private var cachedParseEngine: ParseEngine = ParseEngine()
     private var isForegroundStarted = false
@@ -167,47 +164,45 @@ class NotificationCaptureService : NotificationListenerService() {
 
         // ─── 解析 + 入库 ────────────────────────────────────────
         scope.launch {
-            val tx = cachedParseEngine.parse(
+            // 通知侧内存去重：同一通知常被系统重投/多实例下发（不同 postTime），
+            // 解析出的 merchant 可能不一致导致 SQL 去重漏放，
+            // 这里按「来源包 + 原文」再拦一道（3 分钟窗口）。
+            val dupKey = "$pkg|${rawText.take(100)}"
+            val now = System.currentTimeMillis()
+            val lastTs = lastInsertedAt[dupKey]
+            if (lastTs != null && now - lastTs < 3 * 60 * 1000L) {
+                fileLog("⏭️ 3分钟内同来源同内容重复跳过 pkg=$pkg")
+                return@launch
+            }
+            val id = CaptureIngestor.ingest(
+                context = this@NotificationCaptureService,
+                db = db,
+                engine = cachedParseEngine,
                 rawText = rawText,
-                sourcePackage = pkg,
-                sourceChannel = pkgToChannel(pkg),
-                occurredAt = sbn.postTime
-            )
-            if (tx != null) {
-                val tx = tx.withDefaultAssociation(db)
-                // 通知侧内存去重：同一通知常被系统重投/多实例下发（不同 postTime），
-                // merchant 可能解析不一致导致 SQL 去重漏放，这里按 金额|类型|来源包 再拦一道
-                val dupKey = "${tx.amount}|${tx.type.name}|$pkg"
-                val now = System.currentTimeMillis()
-                val lastTs = lastInsertedAt[dupKey]
-                if (lastTs != null && now - lastTs < 3 * 60 * 1000L) {
-                    fileLog("⏭️ 3分钟内同来源同金额重复跳过 key=$dupKey")
-                    return@launch
+                channel = pkgToChannel(pkg),
+                occurredAt = sbn.postTime,
+                logTag = "通知",
+                sourcePackage = pkg
+            ) { tx, _ ->
+                handler.post {
+                    android.widget.Toast.makeText(
+                        this@NotificationCaptureService,
+                        "🎯 [${pkgToChannel(pkg)}] ¥${tx.amount.formatAmount()}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
                 }
-                // 去重：同 5 分钟内、同金额、同类型
-                val since = tx.occurredAt - 5 * 60 * 1000
-                val until = tx.occurredAt + 5 * 60 * 1000
-                val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)
-                if (dupes.isEmpty()) {
-                    val id = db.transactionDao().insert(tx)
-                    lastInsertedAt[dupKey] = now
-                    fileLog("✅ 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}")
-                    handler.post {
-                        android.widget.Toast.makeText(
-                            this@NotificationCaptureService,
-                            "🎯 [${pkgToChannel(pkg)}] ¥${tx.amount.formatAmount()}",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                // 刷新桌面 Widget
+                com.bookkeeping.app.widget.BookkeepingWidget().updateAll(this@NotificationCaptureService)
+            }
+            if (id != null) {
+                lastInsertedAt[dupKey] = now
+                // 容量保护：清掉 3 分钟窗口外的记录，避免进程长期运行时 Map 无限增长
+                if (lastInsertedAt.size > 200) {
+                    val it = lastInsertedAt.entries.iterator()
+                    while (it.hasNext()) {
+                        if (now - it.next().value > 3 * 60 * 1000L) it.remove()
                     }
-                    // 刷新桌面 Widget
-                    com.bookkeeping.app.widget.BookkeepingWidget().updateAll(this@NotificationCaptureService)
-                    // 预算超支检查（每自然月最多提醒一次）
-                    checkBudgetAndNotify(this@NotificationCaptureService, ledgerId = tx.ledgerId)
-                } else {
-                    fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
                 }
-            } else {
-                fileLog("❌ 解析失败（无法提取金额或文本为空）")
             }
         }
 

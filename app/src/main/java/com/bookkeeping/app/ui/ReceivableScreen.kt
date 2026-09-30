@@ -25,16 +25,16 @@ import com.bookkeeping.app.LedgerDropdownTitle
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Receivable
-import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.embeddedImePadding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.SuccessGreen
+import com.bookkeeping.app.theme.TransferOrange
+import com.bookkeeping.app.formatTime
 
 /** 应收/应付款管理页 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,7 +143,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val sign = if (tab == 0) "+" else "-"
-                            val pendingColor = if (tab == 0) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                            val pendingColor = if (tab == 0) SuccessGreen else TransferOrange
                             Text(
                                 "待处理 ${pendingList.size} 笔 · $sign¥${totalPending.formatAmount()}",
                                 fontSize = 13.sp,
@@ -247,12 +247,12 @@ private fun ReceivableRow(
     }.timeInMillis
     val isOverdue = r.status == Receivable.Status.PENDING && r.dueDate < today
     val isDone = r.status == Receivable.Status.DONE
-    val dueStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(r.dueDate))
+    val dueStr = formatTime(r.dueDate, "yyyy-MM-dd")
     val amountColor = when {
         isDone -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        isOverdue -> Color(0xFFE53935)
-        isReceivable -> Color(0xFF4CAF50)
-        else -> Color(0xFFFF9800)
+        isOverdue -> DangerRed
+        isReceivable -> SuccessGreen
+        else -> TransferOrange
     }
     val amountPrefix = if (isReceivable) "+" else "-"
 
@@ -286,7 +286,7 @@ private fun ReceivableRow(
                             Text(
                                 "逾期",
                                 fontSize = 10.sp,
-                                color = Color(0xFFE53935),
+                                color = DangerRed,
                                 modifier = Modifier
                                     .background(Color(0x22E53935), RoundedCornerShape(4.dp))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
@@ -320,7 +320,7 @@ private fun ReceivableRow(
             // 删除/编辑按钮任何状态下都可用；待处理可标记完成，已完成可撤销
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onDelete) {
-                    Text("删除", color = Color(0xFFE53935), fontSize = 12.sp)
+                    Text("删除", color = DangerRed, fontSize = 12.sp)
                 }
                 Spacer(Modifier.width(4.dp))
                 TextButton(onClick = onClick) {
@@ -336,7 +336,7 @@ private fun ReceivableRow(
                     Button(
                         onClick = onMarkDone,
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
                     ) { Text("✓ 完成", fontSize = 12.sp) }
                 }
             }
@@ -371,14 +371,14 @@ private fun ReceivableEditDialog(
     }
     var ledMenu by remember { mutableStateOf(false) }
     val dueDateStr = remember(dueDateMillis) {
-        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(dueDateMillis))
+        formatTime(dueDateMillis, "yyyy-MM-dd")
     }
     var error by remember { mutableStateOf<String?>(null) }
 
     // 必填项标签：红色星号 + 加粗
     val requiredLabel: @Composable (String) -> Unit = { text ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("*", color = Color(0xFFE53935), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("*", color = DangerRed, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.width(2.dp))
             Text(text, fontWeight = FontWeight.Bold)
         }
@@ -400,7 +400,7 @@ private fun ReceivableEditDialog(
                             withContext(Dispatchers.IO) { db.receivableDao().delete(item!!.id) }
                             onSaved()
                         }
-                    }) { Text("🗑 删除", color = Color(0xFFE53935)) }
+                    }) { Text("🗑 删除", color = DangerRed) }
                 }
             }
 
@@ -531,7 +531,7 @@ private fun ReceivableEditDialog(
             error?.let {
                 Text(
                     "⚠️ $it",
-                    color = Color(0xFFE53935),
+                    color = DangerRed,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)

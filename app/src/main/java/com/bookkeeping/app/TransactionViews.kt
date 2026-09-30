@@ -31,15 +31,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Locale
+import com.bookkeeping.app.theme.TransferOrange
 
 /** 金额汇总防浮点尾差：如 0.1+0.2=0.30000000000000004 → 0.3 */
 internal fun Double.round2(): Double = Math.round(this * 100) / 100.0
@@ -58,7 +58,7 @@ internal fun TransactionItem(
     val typeColor = when (tx.type) {
         Transaction.Type.EXPENSE -> ExpenseRed
         Transaction.Type.INCOME -> IncomeGreen
-        Transaction.Type.TRANSFER -> Color(0xFFFF9800)
+        Transaction.Type.TRANSFER -> TransferOrange
     }
     val sign = when (tx.type) {
         Transaction.Type.EXPENSE -> "-"
@@ -114,7 +114,7 @@ internal fun TransactionItem(
                     fontSize = 16.sp
                 )
                 Text(
-                    formatTime(tx.occurredAt),
+                    formatTxTime(tx.occurredAt),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -137,6 +137,7 @@ internal fun categoryEmoji(category: String): String = when {
     category.contains("打车") -> "🚕"
     category.contains("工资") -> "💰"
     category.contains("红包") -> "🧧"
+    category.contains("人情") -> "🤝"
     category.contains("还款") -> "💳"
     category.contains("还账") -> "✅"
     category.contains("借出") -> "🤝"
@@ -161,15 +162,11 @@ internal fun categoriesFor(type: Transaction.Type): List<String> = when (type) {
     Transaction.Type.TRANSFER -> listOf("转账")
 }
 
-private fun formatTime(ts: Long): String {
-    val cal = Calendar.getInstance()
-    val txCal = Calendar.getInstance().apply { timeInMillis = ts }
-    val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-    return if (cal.get(Calendar.DAY_OF_YEAR) == txCal.get(Calendar.DAY_OF_YEAR)) {
-        fmt.format(txCal.time)
-    } else {
-        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(txCal.time)
-    }
+/** 今天的交易只显示 HH:mm，跨天则补上日期。用 LocalDate 比较，避免跨年时 DAY_OF_YEAR 误判 */
+private fun formatTxTime(ts: Long): String {
+    val day = java.time.Instant.ofEpochMilli(ts).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    val isToday = java.time.LocalDate.now() == day
+    return if (isToday) formatTime(ts, "HH:mm") else formatTime(ts, "MM-dd HH:mm")
 }
 
 // ─── 顶栏账本下拉标题 ─────────────────────────────────────────
@@ -210,19 +207,26 @@ internal fun EmptyState(
 internal fun LedgerDropdownTitle(
     ledgers: List<Ledger>,
     selectedLedgerId: Long,
-    onSelect: (Long) -> Unit
+    onSelect: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = TextUnit.Unspecified,
+    fontWeight: FontWeight = FontWeight.Bold,
+    color: Color = Color.Unspecified,
+    showDefaultMark: Boolean = false
 ) {
     var menu by remember { mutableStateOf(false) }
     val current = if (selectedLedgerId == 0L) null
                   else ledgers.firstOrNull { it.id == selectedLedgerId }
-    Box {
+    Box(modifier) {
         Row(
             Modifier.clickable { menu = true },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 current?.let { "${it.icon} ${it.name}" } ?: "📚 全部账本",
-                fontWeight = FontWeight.Bold,
+                fontWeight = fontWeight,
+                fontSize = fontSize,
+                color = color,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -235,7 +239,9 @@ internal fun LedgerDropdownTitle(
             )
             ledgers.forEach { led ->
                 DropdownMenuItem(
-                    text = { Text("${led.icon} ${led.name}") },
+                    text = {
+                        Text("${led.icon} ${led.name}${if (showDefaultMark && led.isDefault) "（默认）" else ""}")
+                    },
                     onClick = { menu = false; onSelect(led.id) }
                 )
             }

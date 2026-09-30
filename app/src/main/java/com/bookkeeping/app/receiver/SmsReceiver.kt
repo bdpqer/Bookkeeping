@@ -7,13 +7,11 @@ import android.database.ContentObserver
 import android.database.Cursor
 import android.net.Uri
 import android.os.Handler
-import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.FileLog
-import com.bookkeeping.app.checkBudgetAndNotify
-import com.bookkeeping.app.withDefaultAssociation
+import com.bookkeeping.app.service.CaptureIngestor
 import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.parser.ParseEngine
@@ -52,8 +50,25 @@ class SmsReceiver : BroadcastReceiver() {
     // ─── 统一处理入口 ──────────────────────────────────────────
 
     companion object {
-        /** 已处理的短信 ID（进程内去重） */
-        private val processedIds = mutableSetOf<Long>()
+        /** 进程内去重集合的容量上限：超出后淘汰最早的记录，避免长期运行无限增长 */
+        private const val MAX_PROCESSED_IDS = 500
+
+        /** 已处理的短信去重键（进程内，按插入顺序淘汰） */
+        private val processedIds = LinkedHashSet<Long>()
+
+        /**
+         * 登记去重键：已存在返回 false（应跳过），否则写入并返回 true。
+         * 超过 [MAX_PROCESSED_IDS] 时淘汰最早加入的键。
+         */
+        private fun markProcessed(key: Long): Boolean {
+            synchronized(processedIds) {
+                if (!processedIds.add(key)) return false
+                while (processedIds.size > MAX_PROCESSED_IDS) {
+                    processedIds.remove(processedIds.first())
+                }
+                return true
+            }
+        }
 
         /** 规则缓存 */
         @Volatile private var cachedRules: List<com.bookkeeping.app.data.entity.ParseRule> = emptyList()
@@ -86,12 +101,9 @@ class SmsReceiver : BroadcastReceiver() {
             // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+5分钟桶）统一去重；
             // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±5 分钟）兜底。
             val dedupKey = (sender + "|" + body + "|" + time / (5 * 60 * 1000)).hashCode().toLong()
-            synchronized(processedIds) {
-                if (processedIds.contains(dedupKey)) {
-                    fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
-                    return
-                }
-                processedIds.add(dedupKey)
+            if (!markProcessed(dedupKey)) {
+                fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
+                return
             }
 
             // 关键词过滤（只记录疑似支付/银行的短信）
@@ -123,30 +135,16 @@ class SmsReceiver : BroadcastReceiver() {
 
             // ─── 解析 + 入库 ────────────────────────────────────────
             CoroutineScope(Dispatchers.IO).launch {
-                val db = AppDatabase.getInstance(context)
-                val engine = getEngine(context)
-                val tx = engine.parse(
+                CaptureIngestor.ingest(
+                    context = context,
+                    db = AppDatabase.getInstance(context),
+                    engine = getEngine(context),
                     rawText = body,
-                    sourceSender = sender,
-                    sourceChannel = senderToChannel(sender),
-                    occurredAt = time
+                    channel = senderToChannel(sender),
+                    occurredAt = time,
+                    logTag = "SMS",
+                    sourceSender = sender
                 )
-                if (tx != null) {
-                    val tx = tx.withDefaultAssociation(db)
-                    val since = tx.occurredAt - 5 * 60 * 1000
-                    val until = tx.occurredAt + 5 * 60 * 1000
-                    val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)
-                    if (dupes.isEmpty()) {
-                        val id = db.transactionDao().insert(tx)
-                        fileLog("✅ 短信解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category}")
-                        // 预算超支检查（每自然月最多提醒一次）
-                        checkBudgetAndNotify(context, ledgerId = tx.ledgerId)
-                    } else {
-                        fileLog("⏭️ 重复交易跳过 amt=${tx.amount} type=${tx.type}")
-                    }
-                } else {
-                    fileLog("❌ 短信解析失败（无法提取金额）")
-                }
             }
         }
 
