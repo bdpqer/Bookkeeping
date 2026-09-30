@@ -3,6 +3,7 @@ package com.bookkeeping.app.parser
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.data.entity.ParseRule
 import com.bookkeeping.app.data.entity.Transaction
+import com.bookkeeping.app.digitOf
 import com.bookkeeping.app.parseChineseNumber
 import com.bookkeeping.app.round2
 
@@ -213,6 +214,8 @@ class ParseEngine(
             Regex("""人民币\s*(\d+(?:\.\d{1,2})?)"""),         // 人民币5
             Regex("""金额[：:]\s*([\d,]+\.\d{1,2})"""),        // 金额：1234.56
             Regex("""金额[：:]\s*(\d+(?:\.\d{1,2})?)"""),      // 金额：5
+            Regex("""(?:订单金额|实付金额|交易金额)\s*([\d,]+\.\d{1,2})"""), // 订单金额 1,234.56（微信/支付宝长通知）
+            Regex("""(?:订单金额|实付金额|交易金额)\s*(\d+(?:\.\d{1,2})?)"""), // 订单金额 5
             Regex("""([\d,]+\.\d{1,2})\s*元"""),               // 1234.56元
             Regex("""(\d+(?:\.\d{1,2})?)\s*元""")              // 5元
         )
@@ -220,8 +223,8 @@ class ParseEngine(
         /** 松散金额模式：仅靠上下文词定位，可能截断「88块5」式小数，故放在口语模式之后兜底 */
         private val LOOSE_AMOUNT_REGEXES: List<Regex> = listOf(
             Regex("""(?:花了|花费)\s*(\d+(?:\.\d{1,2})?)"""),  // 花了50 / 花费50
-            // 微信/支付宝消费可能有 "付款 ¥XX"
-            Regex("""(?:付款|支付|消费)[^¥￥]{0,5}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
+            // 微信/支付宝消费可能有 "付款 ¥XX"（[^¥￥\d] 不吞数字，防「支付时间 2026-09」把 026 当金额）
+            Regex("""(?:付款|支付|消费)[^¥￥\d]{0,5}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
         )
 
         /**
@@ -230,12 +233,6 @@ class ParseEngine(
          */
         private val COLLOQUIAL_KUAI_REGEX =
             Regex("""((?:\d+(?:\.\d{1,2})?)|(?:[零一二两三四五六七八九十百千万]+(?:点[零一二两三四五六七八九十]+)?))\s*块(?:钱)?(?:([0-9零一二两三四五六七八九])(?:[毛角]([0-9零一二两三四五六七八九])分?)?)?""")
-
-        /** 毛角分位换算：单字符数字（阿拉伯或中文）→ 数值，空串返回 null */
-        private fun digitOf(s: String): Double? {
-            if (s.isEmpty()) return null
-            return s.toDoubleOrNull() ?: parseChineseNumber(s)
-        }
 
         /** 中文数字 + 元：三十五元 / 六十元（块系列由 COLLOQUIAL_KUAI_REGEX 覆盖） */
         private val CN_YUAN_REGEX =

@@ -3,7 +3,6 @@ package com.bookkeeping.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
@@ -158,19 +157,18 @@ class BookkeepingApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID_CAPTURE,
-                getString(R.string.capture_notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = getString(R.string.capture_notification_text)
-                setShowBadge(false)
-            }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
-            Log.d(TAG, "Notification channel created")
+        // minSdk=26（Android 8.0）起 NotificationChannel 为必需，无版本分支
+        val channel = NotificationChannel(
+            CHANNEL_ID_CAPTURE,
+            getString(R.string.capture_notification_channel_name),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = getString(R.string.capture_notification_text)
+            setShowBadge(false)
         }
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(channel)
+        Log.d(TAG, "Notification channel created")
     }
 
     private fun registerSmsContentObserver() {
@@ -187,12 +185,15 @@ class BookkeepingApp : Application() {
         FileLog.append(this, "debug.log", msg)
     }
 
+    /** 启动期一次性后台任务的常驻作用域（复用，避免每次任务新建 CoroutineScope） */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /**
-     * 一次性后台任务：Application 启动时跑一次就结束，scope 随 lambda 自动释放。
+     * 一次性后台任务：Application 启动时跑一次就结束，scope 随 App 生命周期存在。
      * 失败仅记录日志，不抛给系统（这些都不影响首发阶段 UI，但行为正确性依赖它们）。
      */
     private fun launchIo(tag: String, block: suspend () -> Unit) {
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        appScope.launch {
             try { block() } catch (e: Exception) { Log.e(TAG, "$tag failed", e) }
         }
     }
@@ -209,18 +210,22 @@ class BookkeepingApp : Application() {
 /** 统一文件日志：Service / 短信接收器 / App 三处共用；超 1MB 截断保留后半段，防无限膨胀 */
 internal object FileLog {
     private const val MAX_BYTES = 1_000_000L
+    // DateTimeFormatter 线程安全可复用（java.time 自 API 26 可用），替代每次 new SimpleDateFormat
+    private val TIME_FMT = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
 
     fun append(context: android.content.Context, fileName: String, msg: String) {
         try {
-            val f = java.io.File(context.filesDir, fileName)
-            // 轮转：超限时保留后半段（最新日志在尾部，不会丢最近记录）
-            if (f.length() > MAX_BYTES) {
-                val bytes = f.readBytes()
-                f.writeBytes(bytes.copyOfRange(bytes.size / 2, bytes.size))
+            // 轮转 + 追加在同一临界区，避免并发写交错
+            synchronized(this) {
+                val f = java.io.File(context.filesDir, fileName)
+                // 轮转：超限时保留后半段（最新日志在尾部，不会丢最近记录）
+                if (f.length() > MAX_BYTES) {
+                    val bytes = f.readBytes()
+                    f.writeBytes(bytes.copyOfRange(bytes.size / 2, bytes.size))
+                }
+                val ts = TIME_FMT.format(java.time.LocalTime.now())
+                java.io.FileWriter(f, true).use { it.append("$ts  $msg\n") }
             }
-            val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                .format(java.util.Date())
-            java.io.PrintWriter(java.io.FileWriter(f, true)).use { it.appendLine("$ts  $msg") }
             Log.d(BookkeepingApp.TAG, msg)
         } catch (e: Exception) {
             Log.e(BookkeepingApp.TAG, "FileLog($fileName) failed: ${e.message}")

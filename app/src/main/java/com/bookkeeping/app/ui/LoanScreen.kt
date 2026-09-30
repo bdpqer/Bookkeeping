@@ -283,7 +283,7 @@ private fun DebtItem(
             }
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = progress,
+                progress = { progress },
                 modifier = Modifier.fillMaxWidth().height(4.dp),
                 color = if (debt.settled) Color(0xFF4CAF50)
                 else if (isLent) Color(0xFFEF6C00)

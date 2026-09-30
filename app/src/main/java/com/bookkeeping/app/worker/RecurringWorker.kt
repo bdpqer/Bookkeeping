@@ -94,7 +94,12 @@ class RecurringWorker(
 
     /** 分期计划：把所有已到期但未入账的期数处理掉（自动入账或仅提醒） */
     private suspend fun processInstallments(db: AppDatabase, now: Long) {
-        val plans = try { db.installmentDao().getActive() } catch (_: Exception) { return }
+        val plans = try {
+            db.installmentDao().getActive()
+        } catch (e: Exception) {
+            Log.e(BookkeepingApp.TAG, "processInstallments: getActive failed", e)
+            return
+        }
         for (plan in plans) {
             try {
                 var updated = plan
@@ -301,7 +306,10 @@ class RecurringWorker(
                             installmentDueDate(plan.firstDate, plan.paidPeriods + 1) else null
                     }
                     .minOrNull()
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                Log.e(BookkeepingApp.TAG, "scheduleNext: installment due query failed", e)
+                null
+            }
             val soonest = minOf(nextRecurring ?: Long.MAX_VALUE, nextPlanDue ?: Long.MAX_VALUE)
             if (soonest == Long.MAX_VALUE) return
             val delayMs = (soonest - System.currentTimeMillis()).coerceAtLeast(60_000L) // 至少 1 分钟后

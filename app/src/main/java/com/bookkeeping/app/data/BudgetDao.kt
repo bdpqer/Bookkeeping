@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.bookkeeping.app.data.entity.Budget
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BudgetDao {
@@ -18,15 +17,6 @@ interface BudgetDao {
 
     @Query("SELECT * FROM budgets")
     suspend fun getAll(): List<Budget>
-
-    /** 设置页列表：账本 + 预算（左连接，无预算的账本也出现） */
-    @Query("""
-        SELECT l.id AS ledgerId, l.name AS ledgerName, l.icon AS ledgerIcon,
-               COALESCE(b.monthlyAmount, 0.0) AS monthlyAmount
-        FROM ledgers l LEFT JOIN budgets b ON b.ledgerId = l.id
-        ORDER BY l.isDefault DESC, l.id ASC
-    """)
-    fun observeAllWithLedger(): Flow<List<BudgetWithLedger>>
 
     /** 全部账本预算合计（首页"全部账本"视图展示用） */
     @Query("SELECT COALESCE(SUM(monthlyAmount), 0.0) FROM budgets")
@@ -49,10 +39,3 @@ interface BudgetDao {
     suspend fun deleteOrphans()
 }
 
-/** 设置页展示用：账本 + 预算 */
-data class BudgetWithLedger(
-    val ledgerId: Long,
-    val ledgerName: String,
-    val ledgerIcon: String,
-    val monthlyAmount: Double
-)

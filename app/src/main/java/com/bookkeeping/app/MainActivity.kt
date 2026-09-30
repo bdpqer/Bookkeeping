@@ -2,7 +2,6 @@ package com.bookkeeping.app
 
 import android.content.ComponentName
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
@@ -24,9 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
@@ -76,7 +75,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
 
             // ── 锁定门控：离开 App 自动上锁，回来需验证 ──
-            val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
             var locked by remember {
                 mutableStateOf(
                     com.bookkeeping.app.ui.isLockEnabled(applicationContext) && !com.bookkeeping.app.ui.LockState.unlocked
@@ -121,11 +120,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (!flat.contains(component.flattenToString())) return
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(Intent(this, NotificationCaptureService::class.java))
-            } else {
-                startService(Intent(this, NotificationCaptureService::class.java))
-            }
+            // minSdk=26（Android 8.0）起 startForegroundService 为唯一入口，无旧分支
+            startForegroundService(Intent(this, NotificationCaptureService::class.java))
         } catch (e: Throwable) {
             Log.e("Bookkeeping", "startService err: ${e.message}")
         }
@@ -233,7 +229,7 @@ private fun MainScaffold(
                 NavigationBarItem(
                     selected = currentTab == Tab.LIST,
                     onClick = { currentTab = Tab.LIST },
-                    icon = { Icon(Icons.Default.List, contentDescription = null) },
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
                     label = { Text("明细") }
                 )
                 NavigationBarItem(

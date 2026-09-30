@@ -22,8 +22,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,7 +78,7 @@ internal fun CalendarScreen() {
     val currentLedgerId by remember { mutableStateOf<Long?>(null) }   // 后续接 LedgerDropdown 时改
     val ledgerKey = currentLedgerId
     val monthTxs by remember(ledgerKey) {
-        if (ledgerKey != null) db.transactionDao().observeLedgerConfirmed(ledgerKey)
+        if (ledgerKey != null) db.transactionDao().observeByLedger(ledgerKey)
         else db.transactionDao().observeAll()
     }.collectAsState(initial = emptyList())
     // 当月按天汇总：依赖 monthTxs + viewYearMonth，remember 避免每次重组重算
@@ -121,12 +121,12 @@ internal fun CalendarScreen() {
         ) {
             IconButton(onClick = {
                 viewYearMonth = (viewYearMonth.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
-            }) { Icon(Icons.Default.ArrowBack, null) }
+            }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
             val sdf = java.text.SimpleDateFormat("yyyy年 M月", java.util.Locale.CHINA)
             Text(sdf.format(viewYearMonth.time), fontSize = 18.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = {
                 viewYearMonth = (viewYearMonth.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
-            }) { Icon(Icons.Default.ArrowForward, null) }
+            }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) }
         }
 
         // 周标题行

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.Bookkeeping" parent="Theme.Material3.DayNight.NoActionBar">
+    <!-- 纯 Compose 应用，UI 主题由 BookkeepingTheme 控制；此处仅提供启动窗口样式。
+         用平台自带主题避免依赖 material 库（已从依赖中移除） -->
+    <style name="Theme.Bookkeeping" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>

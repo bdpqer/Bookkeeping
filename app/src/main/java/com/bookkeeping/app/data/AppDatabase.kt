@@ -20,7 +20,7 @@ import com.bookkeeping.app.data.entity.Transaction
 @Database(
     entities = [Transaction::class, ParseRule::class, Account::class, Ledger::class, RecurringItem::class, MerchantRule::class, DebtRecord::class, Receivable::class, InstallmentPlan::class, Budget::class],
     version = 12,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 

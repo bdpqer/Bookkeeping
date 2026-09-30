@@ -2,8 +2,8 @@ package com.bookkeeping.app
 
 import android.content.ComponentName
 import android.content.Context
-import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Budget
 import com.bookkeeping.app.service.NotificationCaptureService
@@ -62,7 +62,8 @@ suspend fun checkBudgetAndNotify(context: Context, ledgerId: Long?) {
             ?: db.ledgerDao().getAll().firstOrNull()?.id
             ?: return
         checkBudgetAndNotifyForLedger(context, target)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        Log.e(BookkeepingApp.TAG, "checkBudgetAndNotify failed", e)
     }
 }
 
@@ -86,14 +87,13 @@ private suspend fun checkBudgetAndNotifyForLedger(context: Context, ledgerId: Lo
         if (spent <= budget) return
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                android.app.NotificationChannel(
-                    CHANNEL_BUDGET_ALERT, "预算超支提醒",
-                    android.app.NotificationManager.IMPORTANCE_DEFAULT
-                )
+        // minSdk=26 起 NotificationChannel 必需，无需版本分支
+        nm.createNotificationChannel(
+            android.app.NotificationChannel(
+                CHANNEL_BUDGET_ALERT, "预算超支提醒",
+                android.app.NotificationManager.IMPORTANCE_DEFAULT
             )
-        }
+        )
         val notif = androidx.core.app.NotificationCompat.Builder(context, CHANNEL_BUDGET_ALERT)
             .setSmallIcon(com.bookkeeping.app.R.drawable.ic_launcher_foreground)
             .setContentTitle("⚠️ 本月预算已超支")
@@ -103,6 +103,7 @@ private suspend fun checkBudgetAndNotifyForLedger(context: Context, ledgerId: Lo
             .build()
         nm.notify(BUDGET_NOTIF_ID, notif)
         db.budgetDao().markNotified(ledgerId, monthKey)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        Log.e(BookkeepingApp.TAG, "checkBudgetAndNotifyForLedger failed (ledger=$ledgerId)", e)
     }
 }

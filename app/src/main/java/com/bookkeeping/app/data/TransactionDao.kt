@@ -44,10 +44,6 @@ interface TransactionDao {
     """)
     suspend fun sumByLedger(ledgerId: Long, type: String, start: Long, end: Long): Double
 
-    /** 按账本明细（确认+未删），报表/月历/预算专用 */
-    @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt DESC")
-    fun observeLedgerConfirmed(ledgerId: Long): Flow<List<Transaction>>
-
     /** 待确认队列：confirmed = false（Flow 订阅，入库/确认/删除由 Room 自动推送，无需手动刷新） */
     @Query("SELECT * FROM transactions WHERE confirmed = 0 AND deletedAt = 0 ORDER BY occurredAt DESC")
     fun observePending(): Flow<List<Transaction>>

@@ -36,6 +36,9 @@ class NotificationCaptureService : NotificationListenerService() {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO)
     private val db by lazy { AppDatabase.getInstance(this) }
+
+    /** 通知侧内存去重：key=金额|类型|来源包，3 分钟内同 key 视为同一通知重投，跳过入库 */
+    private val lastInsertedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
     @Volatile private var cachedParseEngine: ParseEngine = ParseEngine()
     private var isForegroundStarted = false
 
@@ -172,12 +175,22 @@ class NotificationCaptureService : NotificationListenerService() {
             )
             if (tx != null) {
                 val tx = tx.withDefaultAssociation(db)
+                // 通知侧内存去重：同一通知常被系统重投/多实例下发（不同 postTime），
+                // merchant 可能解析不一致导致 SQL 去重漏放，这里按 金额|类型|来源包 再拦一道
+                val dupKey = "${tx.amount}|${tx.type.name}|$pkg"
+                val now = System.currentTimeMillis()
+                val lastTs = lastInsertedAt[dupKey]
+                if (lastTs != null && now - lastTs < 3 * 60 * 1000L) {
+                    fileLog("⏭️ 3分钟内同来源同金额重复跳过 key=$dupKey")
+                    return@launch
+                }
                 // 去重：同 5 分钟内、同金额、同类型
                 val since = tx.occurredAt - 5 * 60 * 1000
                 val until = tx.occurredAt + 5 * 60 * 1000
                 val dupes = db.transactionDao().findDuplicate(tx.amount, tx.type.name, tx.merchant, since, until)
                 if (dupes.isEmpty()) {
                     val id = db.transactionDao().insert(tx)
+                    lastInsertedAt[dupKey] = now
                     fileLog("✅ 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}")
                     handler.post {
                         android.widget.Toast.makeText(
@@ -264,6 +277,8 @@ class NotificationCaptureService : NotificationListenerService() {
         else -> pkg
     }
 
+    /** extras 遍历是调试面板快照用途，Bundle.get 在 Java 侧被标 deprecated（无直接替代，保持） */
+    @Suppress("DEPRECATION")
     private fun dumpAllExtras(extras: android.os.Bundle?, pkg: String): String {
         if (extras == null) return "(no extras)"
         return buildString {

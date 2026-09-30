@@ -253,9 +253,8 @@ internal fun parseChineseNumber(s: String): Double? {
 
 private const val CN_NUM_CLASS = "零一二两三四五六七八九十百千万点"
 
-/** 口语毛角分位换算：单个阿拉伯或中文数字字符 → 数值，空串返回 null */
-private fun digitOfVoice(s: String): Double? =
-    s.toDoubleOrNull() ?: CN_DIGIT[s.singleOrNull()]?.toDouble()
+/** 口语毛角分位换算：单个阿拉伯或中文数字字符 → 数值（与 ParseEngine 共用同一工具） */
+internal fun digitOf(s: String): Double? = s.toDoubleOrNull() ?: parseChineseNumber(s)
 
 /** 从识别文本中提取金额：数字+块/元 → X块Y毛Z → 中文数字+块/元 → 最后裸数字 */
 internal fun extractVoiceAmount(text: String): String? {
@@ -269,8 +268,8 @@ internal fun extractVoiceAmount(text: String): String? {
     // 2) 中文数字 + 块/钱/元，支持 X块Y毛Z
     Regex("([$CN_NUM_CLASS]+)\\s*[块钱元]\\s*(?:([$CN_NUM_CLASS\\d])(?:[毛角]([$CN_NUM_CLASS\\d])分?)?)?").find(text)?.let { m ->
         val x = parseChineseNumber(m.groupValues[1]) ?: return@let
-        val mao = digitOfVoice(m.groupValues[2]) ?: 0.0
-        val fen = digitOfVoice(m.groupValues[3]) ?: 0.0
+        val mao = digitOf(m.groupValues[2]) ?: 0.0
+        val fen = digitOf(m.groupValues[3]) ?: 0.0
         return (x + mao / 10 + fen / 100).round2().formatAmount()
     }
     // 3) 兜底：最后一个裸中文数字串（如「晚饭花了三十」，无块/元后缀）
