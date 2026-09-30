@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 /**
  * 商家/关键词 → 分类的自动映射规则。
- * 比如："星巴克" → "餐饮/饮品"、"滴滴" → "交通"
+ * 比如："星巴克" → "餐饮"、"滴滴" → "交通"
  */
 @Entity(tableName = "merchant_rules", indices = [
     Index(value = ["keyword"]),

@@ -47,9 +47,24 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Calendar
 
 // ─── 记账日历（月历视图） ─────────────────────────────────
+
+/** 本地时区下 timestamp 对应的 epoch day（避免 UTC 切天把 00:00–08:00 算进前一天） */
+private fun localDayKeyOf(ts: Long): Long =
+    Instant.ofEpochMilli(ts).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+
+/** 本地 epoch day 对应当地 00:00:00 的 UTC timestamp */
+private fun localStartOfDayTs(dayEpoch: Long): Long =
+    LocalDate.ofEpochDay(dayEpoch).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+/** 本地 epoch day 的次日 00:00:00 减 1 ms，作为当日 [start, end] 闭区间右端 */
+private fun localEndOfDayTs(dayEpoch: Long): Long =
+    LocalDate.ofEpochDay(dayEpoch).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() - 1
 
 @Composable
 internal fun CalendarScreen() {
@@ -77,7 +92,7 @@ internal fun CalendarScreen() {
         val result = mutableMapOf<Long, Pair<Double, Double>>()
         for (tx in monthTxs) {
             if (tx.occurredAt !in start..end) continue
-            val dayKey = tx.occurredAt / 86_400_000L
+            val dayKey = localDayKeyOf(tx.occurredAt)
             val (exp, inc) = result[dayKey] ?: 0.0 to 0.0
             result[dayKey] = when (tx.type) {
                 Transaction.Type.EXPENSE -> exp + tx.amount to inc
@@ -91,8 +106,8 @@ internal fun CalendarScreen() {
     val dayTransactions = remember(selectedDayKey, monthTxs) {
         if (selectedDayKey == null) emptyList()
         else {
-            val start = selectedDayKey!! * 86_400_000L
-            val end = start + 86_400_000L - 1
+            val start = localStartOfDayTs(selectedDayKey!!)
+            val end = localEndOfDayTs(selectedDayKey!!)
             monthTxs.filter { it.occurredAt in start..end }
         }
     }
@@ -138,7 +153,7 @@ internal fun CalendarScreen() {
         }
 
         val today = Calendar.getInstance()
-        val todayKey = today.timeInMillis / 86_400_000L
+        val todayKey = localDayKeyOf(today.timeInMillis)
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
@@ -151,7 +166,11 @@ internal fun CalendarScreen() {
                     Box(Modifier.aspectRatio(1f))
                 } else {
                     val dayCal = (viewYearMonth.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, dayNum) }
-                    val dayKey = dayCal.timeInMillis / 86_400_000L
+                    val dayKey = LocalDate.of(
+                        dayCal.get(Calendar.YEAR),
+                        dayCal.get(Calendar.MONTH) + 1,
+                        dayNum
+                    ).toEpochDay()
                     val sums = daySums[dayKey]
                     val isToday = dayKey == todayKey
                     val isSelected = dayKey == selectedDayKey
@@ -222,7 +241,7 @@ internal fun CalendarScreen() {
         // 选中日期详情
         val selKey = selectedDayKey
         if (selKey != null) {
-            val selCal = Calendar.getInstance().apply { timeInMillis = selKey * 86_400_000L }
+            val selDate = LocalDate.ofEpochDay(selKey)
             val selSums = daySums[selKey] ?: (0.0 to 0.0)
             val selExp = selSums.first
             val selInc = selSums.second
@@ -233,7 +252,7 @@ internal fun CalendarScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "${selCal.get(Calendar.YEAR)}年${selCal.get(Calendar.MONTH) + 1}月${selCal.get(Calendar.DAY_OF_MONTH)}日",
+                        "${selDate.year}年${selDate.monthValue}月${selDate.dayOfMonth}日",
                         fontSize = 15.sp, fontWeight = FontWeight.Medium
                     )
                     Text(

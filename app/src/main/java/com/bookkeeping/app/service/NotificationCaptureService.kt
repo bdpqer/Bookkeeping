@@ -97,11 +97,26 @@ class NotificationCaptureService : NotificationListenerService() {
         super.onListenerDisconnected()
         fileLog("⚠️ onListenerDisconnected, scheduling rebind...")
         Log.w(BookkeepingApp.TAG, "⚠️ NotificationListenerService disconnected")
+        // requestRebind(ComponentName) 是 API 27 才加入的；
+        // minSdk=26（Android 8.0/8.1）直接调用会 NoSuchMethodError。
+        // 用反射兜底，与 onCreate() 中的逻辑保持一致。
         handler.postDelayed({
             try {
-                requestRebind(ComponentName(this, NotificationCaptureService::class.java))
-                fileLog("🔁 requestRebind called")
-            } catch (e: Exception) {
+                val cls = NotificationListenerService::class.java
+                val rebindMethod = (cls.declaredMethods + cls.methods).firstOrNull {
+                    it.name == "requestRebind" && it.parameterCount == 1
+                }
+                if (rebindMethod != null) {
+                    rebindMethod.isAccessible = true
+                    rebindMethod.invoke(
+                        this,
+                        ComponentName(this, NotificationCaptureService::class.java)
+                    )
+                    fileLog("🔁 requestRebind called (via reflection)")
+                } else {
+                    fileLog("❌ requestRebind not available on this API level")
+                }
+            } catch (e: Throwable) {
                 fileLog("❌ requestRebind failed: ${e.message}")
             }
         }, 2000)

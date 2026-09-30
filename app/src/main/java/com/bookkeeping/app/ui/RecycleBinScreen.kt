@@ -298,16 +298,20 @@ private fun DeletedTxItem(
 }
 
 private fun emojiFor(category: String): String = when {
+    category.contains("购物") -> "🛒"
     category.contains("餐饮") -> "🍜"
     category.contains("饮品") || category.contains("咖啡") -> "☕"
+    category.contains("居住") || category.contains("房租") -> "🏠"
     category.contains("交通") -> "🚗"
-    category.contains("购物") -> "🛒"
     category.contains("工资") -> "💰"
     category.contains("红包") -> "🧧"
+    category.contains("人情") -> "🤝"
     category.contains("还款") -> "💳"
     category.contains("娱乐") -> "🎮"
     category.contains("医疗") -> "💊"
-    category.contains("居住") || category.contains("房租") -> "🏠"
+    category.contains("还账") -> "✅"
+    category.contains("借出") -> "🤝"
+    category.contains("借入") -> "🤝"
     category.contains("报销") -> "🧾"
     else -> "📝"
 }

@@ -77,9 +77,9 @@ internal fun PeriodTaskEditor(
     var showEntryCapture by remember { mutableStateOf(false) }
 
     val cats = if (txType == RecurringItem.TxType.EXPENSE)
-        listOf("餐饮/外卖", "餐饮/饮品", "交通", "购物", "居住", "娱乐", "医疗", "人情", "红包", "借出", "理财", "其他")
+        listOf("购物", "餐饮",  "居住", "交通",  "娱乐", "医疗", "红包", "人情", "借出","还账", "理财", "其他")
     else
-        listOf("工资", "红包", "人情", "还款", "报销", "理财", "其他")
+        listOf("工资", "报销", "红包", "人情", "借出", "还款",  "理财", "其他")
 
     fun doSave() {
         if (name.isBlank()) {

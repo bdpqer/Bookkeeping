@@ -143,7 +143,7 @@ fun ManualAddDialog(
 
     var amountText by remember { mutableStateOf(initialAmount) }
     var selectedType by remember { mutableStateOf(initialType) }
-    var selectedCategory by remember { mutableStateOf(initialCategory ?: "餐饮/外卖") }
+    var selectedCategory by remember { mutableStateOf(initialCategory ?: "购物") }
     var merchant by remember { mutableStateOf("") }
     var note by remember { mutableStateOf(initialNote) }
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }

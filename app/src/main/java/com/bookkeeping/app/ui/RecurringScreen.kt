@@ -20,12 +20,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.EmptyState
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.InstallmentPlan
+import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.RecurringItem
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
@@ -50,6 +52,7 @@ fun RecurringScreen(onClose: () -> Unit) {
     var recurring by remember { mutableStateOf<List<RecurringItem>>(emptyList()) }
     var plans by remember { mutableStateOf<List<InstallmentPlan>>(emptyList()) }
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }
+    var ledgers by remember { mutableStateOf<List<Ledger>>(emptyList()) }
     var showCreateMenu by remember { mutableStateOf(false) }
     // 0=无 1=编辑周期任务 2=新建周期任务 3=新建分期；查看中的分期
     var editorMode by remember { mutableStateOf(0) }
@@ -62,6 +65,7 @@ fun RecurringScreen(onClose: () -> Unit) {
                 recurring = db.recurringDao().getAll()
                 plans = db.installmentDao().getAll()
                 accounts = db.accountDao().getAllIncludingDisabled()
+                ledgers = db.ledgerDao().getAll()
             }
         }
     }
@@ -128,7 +132,10 @@ fun RecurringScreen(onClose: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             if (filter != 2) {
-                                items(recurring, key = { it.id }) { item ->
+                                // key 必须在整个 LazyColumn 内唯一：周期任务与分期计划分属两张表，
+                                // 各自的 autoGenerate id 完全可能相等（如都有 id=3），
+                                // 直接用裸 id 会抛 "Key was already used"。加 "r"/"p" 前缀隔离。
+                                items(recurring, key = { "r${it.id}" }) { item ->
                                     RecurringRow(
                                         item = item,
                                         onClick = { editingRecurring = item; editorMode = 1 },
@@ -144,10 +151,11 @@ fun RecurringScreen(onClose: () -> Unit) {
                                 }
                             }
                             if (filter != 1) {
-                                items(plans, key = { it.id }) { plan ->
+                                items(plans, key = { "p${it.id}" }) { plan ->
                                     InstallmentRow(
                                         plan = plan,
                                         accountName = accounts.firstOrNull { it.id == plan.accountId }?.name ?: "未知账户",
+                                        ledgerName = ledgers.firstOrNull { it.id == plan.ledgerId }?.name,
                                         onClick = { viewingPlan = plan }
                                     )
                                 }
@@ -201,6 +209,7 @@ fun RecurringScreen(onClose: () -> Unit) {
         InstallmentDetailDialog(
             plan = plan,
             accountName = accName,
+            ledgerName = ledgers.firstOrNull { it.id == plan.ledgerId }?.name,
             onDismiss = { viewingPlan = null },
             onDeleted = {
                 scope.launch {
@@ -212,6 +221,8 @@ fun RecurringScreen(onClose: () -> Unit) {
         )
     }
 }
+
+// ─── 通用小组件 / 工具 ─────────────────────────────
 
 // ─── 分段筛选控件 ──────────────────────────────────
 @Composable
@@ -337,6 +348,7 @@ private fun RecurringRow(
 private fun InstallmentRow(
     plan: InstallmentPlan,
     accountName: String,
+    ledgerName: String?,
     onClick: () -> Unit
 ) {
     val done = plan.status == InstallmentPlan.Status.DONE
@@ -375,10 +387,17 @@ private fun InstallmentRow(
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "第${plan.paidPeriods}/${plan.installments}期$statusText",
+                        buildString {
+                            append(if (plan.mode == InstallmentPlan.Mode.AUTO_TX) "🔁 自动记账" else "⏰ 账单提醒")
+                            append(" · 第${plan.paidPeriods}/${plan.installments}期")
+                            append(statusText)
+                            if (ledgerName != null) append(" · $ledgerName")
+                        },
                         fontSize = 11.sp,
                         color = if (isOverdue) Color(0xFFE53935)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Text(
@@ -408,10 +427,12 @@ private fun InstallmentRow(
 private fun InstallmentDetailDialog(
     plan: InstallmentPlan,
     accountName: String,
+    ledgerName: String?,
     onDismiss: () -> Unit,
     onDeleted: () -> Unit
 ) {
     val summary = "总额 ¥${plan.totalAmount.formatAmount()} · 手续费 ¥${plan.totalFee.formatAmount()} · 共${plan.installments}期，已入账${plan.paidPeriods}期"
+    val modeText = if (plan.mode == InstallmentPlan.Mode.AUTO_TX) "🔁 自动记账" else "⏰ 账单提醒"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -420,6 +441,12 @@ private fun InstallmentDetailDialog(
             Column {
                 Text(
                     summary,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "$modeText · 记账账本：${ledgerName ?: "默认（跟随账户）"}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

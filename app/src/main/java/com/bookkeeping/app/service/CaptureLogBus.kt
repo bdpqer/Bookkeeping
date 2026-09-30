@@ -35,9 +35,9 @@ object CaptureLogBus {
     private val _entries = java.util.concurrent.CopyOnWriteArrayList<CaptureEntry>()
     val entries: List<CaptureEntry> get() = _entries.toList()
 
-    private val listeners = mutableListOf<(List<CaptureEntry>) -> Unit>()
+    // 监听器也用 COW，保证 add() 里的 forEach 与并发 subscribe/unsubscribe 不冲突
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(List<CaptureEntry>) -> Unit>()
 
-    @Synchronized
     fun add(entry: CaptureEntry) {
         _entries.add(0, entry)
         // 限制最多 200 条，防止内存膨胀

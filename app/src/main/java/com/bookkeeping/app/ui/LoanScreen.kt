@@ -474,7 +474,7 @@ private fun RepayDebtDialog(
                     Switch(checked = alsoRecord, onCheckedChange = { alsoRecord = it })
                 }
                 Text(
-                    if (isLent) "将记一笔收入（分类：还款）" else "将记一笔支出（分类：还款）",
+                    if (isLent) "将记一笔收入（分类：还款）" else "将记一笔支出（分类：还账）",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

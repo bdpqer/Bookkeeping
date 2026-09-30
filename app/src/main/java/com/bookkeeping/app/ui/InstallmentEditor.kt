@@ -29,6 +29,7 @@ import com.bookkeeping.app.utcToLocalDayStart
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.InstallmentPlan
+import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.RecurringItem
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.embeddedImePadding
@@ -52,9 +53,13 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getInstance(context) }
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }
+    var ledgers by remember { mutableStateOf<List<Ledger>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        accounts = withContext(Dispatchers.IO) { db.accountDao().getAllIncludingDisabled() }
+        val acc = withContext(Dispatchers.IO) { db.accountDao().getAllIncludingDisabled() }
+        val leds = withContext(Dispatchers.IO) { db.ledgerDao().getAll() }
+        accounts = acc
+        ledgers = leds
     }
     // 信用卡排最前
     val sorted = remember(accounts) {
@@ -62,6 +67,8 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
     }
 
     var accountId by remember { mutableStateOf<Long?>(null) }
+    var mode by remember { mutableStateOf(InstallmentPlan.Mode.AUTO_TX) }
+    var ledgerId by remember { mutableStateOf<Long?>(null) }
     var amountText by remember { mutableStateOf("") }
     var firstDate by remember { mutableStateOf(dayStart(System.currentTimeMillis())) }
     var periodsText by remember { mutableStateOf("12") }
@@ -71,8 +78,10 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
     var remainderInto by remember { mutableStateOf(InstallmentPlan.RemainderTarget.FIRST) }
     var showPreview by remember { mutableStateOf(false) }
     var showAccountPicker by remember { mutableStateOf(false) }
+    var showLedgerPicker by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     val selectedAccount = sorted.firstOrNull { it.id == accountId }
+    val selectedLedger = ledgers.firstOrNull { it.id == ledgerId }
 
     fun doNextOrCreate() {
         val amount = amountText.toDoubleOrNull()
@@ -95,13 +104,15 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
         }
         val plan = InstallmentPlan(
             accountId = accountId!!,
+            ledgerId = if (mode == InstallmentPlan.Mode.AUTO_TX) ledgerId else null,
             totalAmount = amount,
             installments = n,
             firstDate = firstDate,
             totalFee = feeText.toDoubleOrNull() ?: 0.0,
             feeMode = feeMode,
             feeIntoDebt = feeIntoDebt,
-            remainderInto = remainderInto
+            remainderInto = remainderInto,
+            mode = mode
         )
         scope.launch {
             withContext(Dispatchers.IO) { db.installmentDao().insert(plan) }
@@ -187,6 +198,30 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                 }
 
                 Spacer(Modifier.height(14.dp))
+                Text("类型", fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == InstallmentPlan.Mode.AUTO_TX,
+                        onClick = { mode = InstallmentPlan.Mode.AUTO_TX },
+                        label = { Text("🔁 自动记账") }
+                    )
+                    FilterChip(
+                        selected = mode == InstallmentPlan.Mode.REMIND,
+                        onClick = { mode = InstallmentPlan.Mode.REMIND },
+                        label = { Text("⏰ 账单提醒") }
+                    )
+                }
+                if (mode == InstallmentPlan.Mode.AUTO_TX) {
+                    Spacer(Modifier.height(12.dp))
+                    SettingRow(
+                        "记账账本",
+                        selectedLedger?.let { "${it.icon} ${it.name}" } ?: "默认账本"
+                    ) {
+                        showLedgerPicker = true
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
                 SettingRow(
                     "首笔入账日期",
                     SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(firstDate))
@@ -262,12 +297,14 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                 val n = periodsText.toIntOrNull() ?: 12
                 val previewPlan = InstallmentPlan(
                     accountId = accountId ?: 0,
+                    ledgerId = if (mode == InstallmentPlan.Mode.AUTO_TX) ledgerId else null,
                     totalAmount = amountText.toDoubleOrNull() ?: 0.0,
                     installments = n,
                     firstDate = firstDate,
                     totalFee = feeText.toDoubleOrNull() ?: 0.0,
                     feeMode = feeMode,
-                    remainderInto = remainderInto
+                    remainderInto = remainderInto,
+                    mode = mode
                 )
                 Text(
                     "${selectedAccount?.name ?: ""} · 共$n 期",
@@ -357,6 +394,58 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showAccountPicker = false }) { Text("取消") }
+            }
+        )
+    }
+    if (showLedgerPicker) {
+        AlertDialog(
+            onDismissRequest = { showLedgerPicker = false },
+            title = { Text("选择记账账本", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // 默认项：跟随账户/默认账本
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                ledgerId = null; showLedgerPicker = false
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🏠", fontSize = 18.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("默认账本（跟随账户）", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        if (ledgerId == null) Text("✓", color = BlueColor)
+                    }
+                    if (ledgers.isEmpty()) {
+                        Text(
+                            "暂无账本，将使用默认账本",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    ledgers.forEach { led ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    ledgerId = led.id; showLedgerPicker = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(led.icon, fontSize = 18.sp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("${led.name}${if (led.isDefault) "（默认）" else ""}", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            if (ledgerId == led.id) Text("✓", color = BlueColor)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLedgerPicker = false }) { Text("取消") }
             }
         )
     }

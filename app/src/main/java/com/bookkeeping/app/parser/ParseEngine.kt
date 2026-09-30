@@ -166,21 +166,23 @@ class ParseEngine(
 
         // 2. 硬编码兜底（保留向后兼容 + 初始无规则时也能用）
         return when {
+            combined.contains("拼多多") || combined.contains("淘宝") || combined.contains("京东")
+                || combined.contains("购物")
+                -> "购物"
+            combined.contains("咖啡") || combined.contains("星巴克") || combined.contains("瑞幸")
+                || combined.contains("奶茶") || combined.contains("喜茶") || combined.contains("蜜雪冰城") 
+                || combined.contains("美团") || combined.contains("饿了么") || combined.contains("外卖")
+                -> "餐饮"
+            combined.contains("水费") || combined.contains("电费") || combined.contains("燃气")
+                || combined.contains("话费") || combined.contains("宽带")
+                -> "居住"
+            combined.contains("滴滴") || combined.contains("打车") || combined.contains("地铁")
+                || combined.contains("公交") || combined.contains("高铁") || combined.contains("机票")
+                -> "交通"
             combined.contains("转账") || combined.contains("互联汇出") || combined.contains("互联汇入")
                 || combined.contains("汇出") || combined.contains("汇入") || combined.contains("转出")
                 || combined.contains("转入")
                 -> "转账"
-            combined.contains("咖啡") || combined.contains("星巴克") || combined.contains("瑞幸")
-                || combined.contains("奶茶") || combined.contains("喜茶") || combined.contains("蜜雪冰城")
-                -> "餐饮/饮品"
-            combined.contains("美团") || combined.contains("饿了么") || combined.contains("外卖")
-                -> "餐饮/外卖"
-            combined.contains("滴滴") || combined.contains("打车") || combined.contains("地铁")
-                || combined.contains("公交") || combined.contains("高铁") || combined.contains("机票")
-                -> "交通"
-            combined.contains("拼多多") || combined.contains("淘宝") || combined.contains("京东")
-                || combined.contains("购物")
-                -> "购物"
             combined.contains("工资") || combined.contains("薪") || combined.contains("发放")
                 -> "工资"
             combined.contains("红包") || combined.contains("微信红包")
@@ -189,9 +191,6 @@ class ParseEngine(
                 -> "还款"
             combined.contains("理财") || combined.contains("基金") || combined.contains("利息")
                 -> "理财"
-            combined.contains("水费") || combined.contains("电费") || combined.contains("燃气")
-                || combined.contains("话费") || combined.contains("宽带")
-                -> "居住"
             combined.contains("医院") || combined.contains("药") || combined.contains("挂号")
                 -> "医疗"
             else -> "其他"

@@ -23,11 +23,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,11 +51,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.theme.ExpenseRed
@@ -71,7 +82,7 @@ internal fun SettingsScreen(
     var rules by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.ParseRule>>(emptyList()) }
     var accounts by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.Account>>(emptyList()) }
     var ledgers by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.Ledger>>(emptyList()) }
-    var recurringItems by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.RecurringItem>>(emptyList()) }
+    var budgetMap by remember { mutableStateOf(mapOf<Long, Double>()) }
     var lockEnabled by remember { mutableStateOf(com.bookkeeping.app.ui.isLockEnabled(context)) }
     var bioEnabled by remember { mutableStateOf(com.bookkeeping.app.ui.isBiometricUnlockEnabled(context)) }
     var hasPin by remember { mutableStateOf(com.bookkeeping.app.ui.hasPinSet(context)) }
@@ -83,15 +94,18 @@ internal fun SettingsScreen(
             rules = AppDatabase.getInstance(context).parseRuleDao().getAll()
             accounts = AppDatabase.getInstance(context).accountDao().getAllIncludingDisabled()
             ledgers = AppDatabase.getInstance(context).ledgerDao().getAll()
-            recurringItems = AppDatabase.getInstance(context).recurringDao().getAll()
+            budgetMap = AppDatabase.getInstance(context).budgetDao().getAll()
+                .associate { it.ledgerId to it.monthlyAmount }
         }
     }
 
     LaunchedEffect(Unit) { loadAll() }
 
-    val smsGranted = remember {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
-            PackageManager.PERMISSION_GRANTED
+    var smsGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
+                PackageManager.PERMISSION_GRANTED
+        )
     }
 
     DisposableEffect(Unit) {
@@ -99,9 +113,28 @@ internal fun SettingsScreen(
         onDispose { unsub() }
     }
 
+    // ON_RESUME 时统一刷新所有依赖外部状态的字段：
+    //  - 跨 App 跳系统设置（通知监听）返回时，listenerEnabled 自动刷新
+    //  - SMS 权限弹窗返回时，smsGranted 自动刷新（与 smsLauncher 回调冗余兜底）
+    //  - 隐私锁 / PIN / 生物识别被用户在系统层修改时也能跟随刷新
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            listenerEnabled = isNotificationListenerEnabled(context)
+            smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
+                PackageManager.PERMISSION_GRANTED
+            hasPin = com.bookkeeping.app.ui.hasPinSet(context)
+            lockEnabled = com.bookkeeping.app.ui.isLockEnabled(context)
+            bioEnabled = com.bookkeeping.app.ui.isBiometricUnlockEnabled(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val smsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* refresh on back */ }
+    ) { /* 状态由 ON_RESUME 统一刷新 */ }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -118,8 +151,7 @@ internal fun SettingsScreen(
                         granted = listenerEnabled,
                         onRequest = {
                             context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                        },
-                        onBack = { listenerEnabled = isNotificationListenerEnabled(context) }
+                        }
                     )
                     Spacer(Modifier.height(10.dp))
                     PermissionRow(
@@ -361,6 +393,7 @@ internal fun SettingsScreen(
                                 TextButton(onClick = {
                                     scope.launch {
                                         AppDatabase.getInstance(context).ledgerDao().delete(led.id)
+                                        AppDatabase.getInstance(context).budgetDao().deleteByLedger(led.id)
                                         loadAll()
                                     }
                                 }) { Text("删除", color = Color(0xFFE53935), fontSize = 12.sp) }
@@ -380,13 +413,51 @@ internal fun SettingsScreen(
         item {
             Card(shape = RoundedCornerShape(12.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("设置每月预算，首页会显示已花费/剩余",
+                    Text("选择账本设置每月预算，首页会显示已花费/剩余；设为 0 或留空 = 关闭该账本预算",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
 
-                    var budgetText by remember { mutableStateOf(getMonthlyBudget(context).let {
-                        if (it > 0) String.format("%.0f", it) else ""
-                    }) }
+                    // ── 账本下拉选择 ──
+                    var budgetLedgerId by remember { mutableStateOf<Long?>(null) }
+                    var budgetMenu by remember { mutableStateOf(false) }
+                    val budgetLedger = ledgers.firstOrNull { it.id == budgetLedgerId }
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { budgetMenu = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                budgetLedger?.let { "${it.icon} ${it.name}" } ?: "选择账本",
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                        }
+                        DropdownMenu(expanded = budgetMenu, onDismissRequest = { budgetMenu = false }) {
+                            ledgers.forEach { led ->
+                                DropdownMenuItem(
+                                    text = { Text("${led.icon} ${led.name}${if (led.isDefault) "（默认）" else ""}") },
+                                    onClick = { budgetLedgerId = led.id; budgetMenu = false }
+                                )
+                            }
+                            if (ledgers.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("暂无账本") },
+                                    onClick = { budgetMenu = false },
+                                    enabled = false
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    // ── 预算输入 + 保存（随选中账本预填） ──
+                    var budgetText by remember(budgetLedgerId) {
+                        mutableStateOf(
+                            budgetLedgerId?.let { id -> budgetMap[id] ?: 0.0 }
+                                ?.let { if (it > 0) String.format("%.0f", it) else "" } ?: ""
+                        )
+                    }
                     var budgetError by remember { mutableStateOf("") }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -396,19 +467,29 @@ internal fun SettingsScreen(
                             label = { Text("月度预算（设为 0 关闭）") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
+                            enabled = budgetLedgerId != null,
                             isError = budgetError.isNotEmpty(),
                             supportingText = if (budgetError.isNotEmpty()) ({ Text(budgetError) }) else null
                         )
                         Spacer(Modifier.width(8.dp))
                         androidx.compose.material3.Button(
                             onClick = {
+                                val target = budgetLedgerId
+                                if (target == null) {
+                                    budgetError = "请先选择账本"
+                                    return@Button
+                                }
                                 val amt = budgetText.toDoubleOrNull()
                                 if (amt != null && amt >= 0) {
-                                    setMonthlyBudget(context, amt)
+                                    scope.launch {
+                                        setBudgetForLedger(context, target, amt)
+                                        loadAll()
+                                    }
                                     budgetError = ""
                                     android.widget.Toast.makeText(
                                         context,
-                                        if (amt == 0.0) "预算已关闭" else "预算已设置为 ¥${String.format("%.0f", amt)}",
+                                        if (amt == 0.0) "${budgetLedger?.name} 预算已关闭"
+                                        else "${budgetLedger?.name} 预算已设为 ¥${String.format("%.0f", amt)}",
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
                                 } else {
@@ -445,146 +526,71 @@ internal fun SettingsScreen(
         }
         item {
             Card(shape = RoundedCornerShape(12.dp)) {
-                Column(Modifier.padding(vertical = 6.dp)) {
-                    if (rules.isEmpty()) {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("暂无规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                        }
-                    } else {
-                        rules.forEach { rule ->
-                            var enabled by remember { mutableStateOf(rule.isEnabled) }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onEditRule(rule) }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(rule.channelName, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                    Text(
-                                        if (rule.matchKeyword.isNotBlank()) "关键词: ${rule.matchKeyword}"
-                                        else rule.channel,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                androidx.compose.material3.Switch(
-                                    checked = enabled,
-                                    onCheckedChange = { newVal ->
-                                        enabled = newVal
-                                        scope.launch {
-                                            AppDatabase.getInstance(context).parseRuleDao()
-                                                .update(rule.copy(isEnabled = newVal))
-                                            refreshServiceRules()
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── 周期记账 / 账单提醒 ──
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text("周期记账 & 账单提醒", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                TextButton(onClick = {
-                    scope.launch {
-                        val now = System.currentTimeMillis()
-                        AppDatabase.getInstance(context).recurringDao()
-                            .insert(com.bookkeeping.app.data.entity.RecurringItem(
-                                name = "新周期",
-                                mode = com.bookkeeping.app.data.entity.RecurringItem.Mode.REMIND,
-                                period = com.bookkeeping.app.data.entity.RecurringItem.Period.MONTHLY,
-                                startDate = now,
-                                nextRunAt = now
-                            ))
-                        loadAll()
-                        com.bookkeeping.app.worker.RecurringWorker.triggerNow(context)
-                    }
-                }) { Text("+ 新增", fontSize = 12.sp) }
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(12.dp)) {
                 Column {
-                    val sdf = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-                    recurringItems.forEach { item ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(item.name, fontWeight = FontWeight.Medium)
-                                    Spacer(Modifier.width(6.dp))
-                                    AssistChip(
-                                        onClick = {
-                                            scope.launch {
-                                                AppDatabase.getInstance(context).recurringDao()
-                                                    .update(item.copy(isEnabled = !item.isEnabled))
-                                                loadAll()
-                                                com.bookkeeping.app.worker.RecurringWorker.triggerNow(context)
-                                            }
-                                        },
-                                        label = {
-                                            Text(
-                                                when {
-                                                    !item.isEnabled -> "已停用"
-                                                    item.mode == com.bookkeeping.app.data.entity.RecurringItem.Mode.AUTO_TX -> "自动记账"
-                                                    else -> "账单提醒"
-                                                },
-                                                fontSize = 10.sp
-                                            )
-                                        }
-                                    )
-                                }
-                                Text(
-                                    buildString {
-                                        append(when (item.period) {
-                                            com.bookkeeping.app.data.entity.RecurringItem.Period.DAILY -> "每天"
-                                            com.bookkeeping.app.data.entity.RecurringItem.Period.WEEKLY -> "每周"
-                                            com.bookkeeping.app.data.entity.RecurringItem.Period.MONTHLY -> "每月"
-                                            com.bookkeeping.app.data.entity.RecurringItem.Period.YEARLY -> "每年"
-                                        })
-                                        item.dayOfMonth?.let { append(" ${it}号") }
-                                        item.dayOfWeek?.let { append(" 周${it}") }
-                                        append("  · 下次 ${sdf.format(java.util.Date(item.nextRunAt))}")
-                                    },
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                item.amount?.let {
-                                    Text("¥${it.formatAmount()}", fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            TextButton(onClick = {
-                                scope.launch {
-                                    AppDatabase.getInstance(context).recurringDao().delete(item.id)
-                                    loadAll()
-                                }
-                            }) { Text("删除", color = Color(0xFFE53935), fontSize = 12.sp) }
-                        }
-                        if (item != recurringItems.lastOrNull()) HorizontalDivider()
-                    }
-                    if (recurringItems.isEmpty()) {
+                    // ── 折叠头部：点击展开/收起规则清单 ──
+                    var rulesExpanded by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { rulesExpanded = !rulesExpanded }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            "暂无周期规则，点击 + 新增工资/房贷/信用卡还款日提醒",
-                            Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp
+                            "规则清单（${rules.size}）",
+                            fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            if (rulesExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = if (rulesExpanded) "收起" else "展开"
                         )
                     }
+                    if (rulesExpanded) {
+                        if (rules.isEmpty()) {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("暂无规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                            }
+                        } else {
+                            rules.forEach { rule ->
+                                var enabled by remember { mutableStateOf(rule.isEnabled) }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onEditRule(rule) }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(rule.channelName, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            if (rule.matchKeyword.isNotBlank()) "关键词: ${rule.matchKeyword}"
+                                            else rule.channel,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    androidx.compose.material3.Switch(
+                                        checked = enabled,
+                                        onCheckedChange = { newVal ->
+                                            enabled = newVal
+                                            scope.launch {
+                                                AppDatabase.getInstance(context).parseRuleDao()
+                                                    .update(rule.copy(isEnabled = newVal))
+                                                refreshServiceRules()
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
+        // ── 数据管理 ──
         item { Text("数据管理", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         item {
             val settingsScope = rememberCoroutineScope()
@@ -648,8 +654,7 @@ private fun PermissionRow(
     label: String,
     desc: String,
     granted: Boolean,
-    onRequest: () -> Unit,
-    onBack: () -> Unit = {}
+    onRequest: () -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(

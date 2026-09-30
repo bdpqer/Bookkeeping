@@ -124,11 +124,11 @@ internal fun TransactionItem(
 }
 
 internal fun categoryEmoji(category: String): String = when {
+    category.contains("购物") -> "🛒"
     category.contains("餐饮") -> "🍜"
     category.contains("饮品") || category.contains("咖啡") -> "☕"
-    category.contains("交通") -> "🚗"
-    category.contains("购物") -> "🛒"
     category.contains("居住") -> "🏠"
+    category.contains("交通") -> "🚗"
     category.contains("水电") || category.contains("话费") -> "💡"
     category.contains("娱乐") -> "🎮"
     category.contains("医疗") -> "💊"
@@ -138,7 +138,9 @@ internal fun categoryEmoji(category: String): String = when {
     category.contains("工资") -> "💰"
     category.contains("红包") -> "🧧"
     category.contains("还款") -> "💳"
+    category.contains("还账") -> "✅"
     category.contains("借出") -> "🤝"
+    category.contains("借入") -> "🤝"
     category.contains("报销") -> "🧾"
     category.contains("理财") -> "📈"
     category.contains("转账") -> "🔄"
@@ -150,11 +152,11 @@ internal fun categoryEmoji(category: String): String = when {
 /** 按交易类型给出可选分类列表 */
 internal fun categoriesFor(type: Transaction.Type): List<String> = when (type) {
     Transaction.Type.EXPENSE -> listOf(
-        "餐饮/外卖", "餐饮/饮品", "交通", "购物", "居住",
-        "娱乐", "医疗", "人情", "红包", "借出", "理财", "其他"
+        "购物", "餐饮", "居住","交通", 
+        "娱乐", "医疗", "人情", "红包", "借出", "还账", "理财", "其他"
     )
     Transaction.Type.INCOME -> listOf(
-        "工资", "红包", "人情", "还款", "报销", "理财", "其他"
+        "工资", "报销", "人情","红包",  "还款", "借入", "理财", "其他"
     )
     Transaction.Type.TRANSFER -> listOf("转账")
 }

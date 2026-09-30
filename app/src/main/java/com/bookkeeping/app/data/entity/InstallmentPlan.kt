@@ -13,13 +13,17 @@ import java.util.Calendar
  */
 @Entity(tableName = "installment_plans", indices = [
     Index(value = ["status"]),
-    Index(value = ["accountId"])
+    Index(value = ["accountId"]),
+    Index(value = ["ledgerId"])
 ])
 data class InstallmentPlan(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
 
     /** 信用账户 id */
     val accountId: Long,
+
+    /** 记账账本（null = 跟随账户/默认账本），仅 mode=AUTO_TX 时生效 */
+    val ledgerId: Long? = null,
 
     /** 分期总金额 */
     val totalAmount: Double,
@@ -51,6 +55,9 @@ data class InstallmentPlan(
     /** 状态 */
     val status: Status = Status.ACTIVE,
 
+    /** 类型：AUTO_TX 到期自动入账；REMIND 到期仅发提醒（不生成交易） */
+    val mode: Mode = Mode.AUTO_TX,
+
     /** 备注 */
     val note: String = "",
 
@@ -58,6 +65,7 @@ data class InstallmentPlan(
 ) {
     enum class FeeMode { MONTHLY_AVG, FIRST_PERIOD }
     enum class RemainderTarget { FIRST, LAST }
+    enum class Mode { AUTO_TX, REMIND }
     enum class Status { ACTIVE, DONE }
 }
 
@@ -99,6 +107,9 @@ fun installmentPeriodAmounts(plan: InstallmentPlan, periodNo: Int): Pair<Double,
 fun installmentDueDate(firstDate: Long, periodNo: Int): Long {
     val cal = Calendar.getInstance().apply { timeInMillis = firstDate }
     val day = cal.get(Calendar.DAY_OF_MONTH)
+    // 先把"日"置为 1，再加月份：避免 31 号在 add(MONTH) 时溢出到下下个月，
+    // 之后再钳制到目标月的实际最大天数。
+    cal.set(Calendar.DAY_OF_MONTH, 1)
     cal.add(Calendar.MONTH, periodNo - 1)
     cal.set(Calendar.DAY_OF_MONTH, day.coerceAtMost(cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
     cal.set(Calendar.HOUR_OF_DAY, 0)

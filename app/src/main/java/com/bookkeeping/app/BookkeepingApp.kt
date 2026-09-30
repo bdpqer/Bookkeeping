@@ -10,6 +10,7 @@ import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
+import com.bookkeeping.app.data.entity.Budget
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.parser.ParseEngine
@@ -36,8 +37,35 @@ class BookkeepingApp : Application() {
         seedDefaultsIfNeeded()
         seedMerchantRulesIfNeeded()
         fixLegacyAssociations()
+        migrateLegacyBudgetPrefs()
         RecurringWorker.triggerNow(this)
         AutoBackupWorker.ensureScheduled(this)
+    }
+
+    /**
+     * v10 → v11 存量预算数据搬迁：旧全局预算（budget_prefs）→ 默认账本的预算行。
+     * 幂等：跑完删除旧键；孤儿预算行一并清理。失败仅记日志，下次启动重试。
+     */
+    private fun migrateLegacyBudgetPrefs() = launchIo("migrateLegacyBudgetPrefs") {
+        try {
+            val prefs = getSharedPreferences("budget_prefs", MODE_PRIVATE)
+            val oldAmount = prefs.getFloat("monthly_budget", 0f).toDouble()
+            val oldMonth = prefs.getString("budget_notified_month", null)
+            if (oldAmount <= 0 && oldMonth == null) return@launchIo
+
+            val db = AppDatabase.getInstance(this@BookkeepingApp)
+            val target = db.ledgerDao().getDefault() ?: db.ledgerDao().getAll().firstOrNull()
+            if (target != null && db.budgetDao().getByLedger(target.id) == null) {
+                db.budgetDao().insert(
+                    Budget(ledgerId = target.id, monthlyAmount = oldAmount, notifiedMonth = oldMonth)
+                )
+                Log.d(TAG, "✅ 旧全局预算已迁移到账本「${target.name}」：¥$oldAmount")
+            }
+            db.budgetDao().deleteOrphans()
+            prefs.edit().remove("monthly_budget").remove("budget_notified_month").apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "migrateLegacyBudgetPrefs failed", e)
+        }
     }
 
     /** 首次启动初始化默认商家分类规则 */
@@ -46,15 +74,15 @@ class BookkeepingApp : Application() {
             val db = AppDatabase.getInstance(this@BookkeepingApp)
             if (db.merchantRuleDao().count() == 0) {
                 val defaults = listOf(
-                MerchantRule(keyword = "星巴克", category = "餐饮/饮品", note = "咖啡连锁"),
-                MerchantRule(keyword = "瑞幸", category = "餐饮/饮品", note = "咖啡连锁"),
-                MerchantRule(keyword = "喜茶", category = "餐饮/饮品", note = "奶茶连锁"),
-                MerchantRule(keyword = "蜜雪冰城", category = "餐饮/饮品", note = "奶茶连锁"),
-                MerchantRule(keyword = "奶茶", category = "餐饮/饮品"),
-                MerchantRule(keyword = "咖啡", category = "餐饮/饮品"),
-                MerchantRule(keyword = "美团", category = "餐饮/外卖"),
-                MerchantRule(keyword = "饿了么", category = "餐饮/外卖"),
-                MerchantRule(keyword = "外卖", category = "餐饮/外卖"),
+                MerchantRule(keyword = "星巴克", category = "餐饮", note = "咖啡连锁"),
+                MerchantRule(keyword = "瑞幸", category = "餐饮", note = "咖啡连锁"),
+                MerchantRule(keyword = "喜茶", category = "餐饮", note = "奶茶连锁"),
+                MerchantRule(keyword = "蜜雪冰城", category = "餐饮", note = "奶茶连锁"),
+                MerchantRule(keyword = "奶茶", category = "餐饮"),
+                MerchantRule(keyword = "咖啡", category = "餐饮"),
+                MerchantRule(keyword = "美团", category = "餐饮"),
+                MerchantRule(keyword = "饿了么", category = "餐饮"),
+                MerchantRule(keyword = "外卖", category = "餐饮"),
                 MerchantRule(keyword = "滴滴", category = "交通", note = "打车"),
                 MerchantRule(keyword = "打车", category = "交通"),
                 MerchantRule(keyword = "地铁", category = "交通"),

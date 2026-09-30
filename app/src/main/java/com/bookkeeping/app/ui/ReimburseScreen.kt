@@ -265,8 +265,39 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                 Button(
                                     onClick = {
                                         scope.launch {
+                                            val ids = selectedIds.toList()
+                                            if (ids.isEmpty()) return@launch
                                             withContext(Dispatchers.IO) {
-                                                db.transactionDao().batchUpdateReimburseStatus(selectedIds.toList(), "DONE")
+                                                // 1. 对每笔选中的待报销交易生成方向相反的入账（报销款回来）
+                                                val txs = currentList.filter { it.id in ids }
+                                                for (tx in txs) {
+                                                    val opposite = Transaction(
+                                                        amount = tx.amount,
+                                                        type = if (tx.type == Transaction.Type.EXPENSE)
+                                                            Transaction.Type.INCOME
+                                                        else Transaction.Type.EXPENSE,
+                                                        category = "报销",
+                                                        merchant = tx.merchant.ifBlank { tx.category } + " 报销",
+                                                        source = "报销",
+                                                        accountId = tx.accountId,
+                                                        ledgerId = tx.ledgerId,
+                                                        note = buildString {
+                                                            append(
+                                                                "报销入账（冲抵${if (tx.type == Transaction.Type.EXPENSE) "支出" else "收入"} ¥${tx.amount.formatAmount()}）"
+                                                            )
+                                                            if (tx.note.isNotBlank()) append("｜${tx.note}")
+                                                        },
+                                                        rawText = "[报销] ${tx.merchant.ifBlank { tx.category }} ${tx.amount}",
+                                                        isManual = false,
+                                                        confirmed = true,
+                                                        confidence = Transaction.Confidence.HIGH,
+                                                        occurredAt = System.currentTimeMillis(),
+                                                        reimburseStatus = null
+                                                    )
+                                                    db.transactionDao().insert(opposite)
+                                                }
+                                                // 2. 原交易标记为已报销
+                                                db.transactionDao().batchUpdateReimburseStatus(ids, "DONE")
                                             }
                                             selectedIds = emptySet()
                                             refresh()

@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.bookkeeping.app.data.entity.Account
+import com.bookkeeping.app.data.entity.Budget
 import com.bookkeeping.app.data.entity.DebtRecord
 import com.bookkeeping.app.data.entity.InstallmentPlan
 import com.bookkeeping.app.data.entity.Ledger
@@ -17,8 +18,8 @@ import com.bookkeeping.app.data.entity.Receivable
 import com.bookkeeping.app.data.entity.Transaction
 
 @Database(
-    entities = [Transaction::class, ParseRule::class, Account::class, Ledger::class, RecurringItem::class, MerchantRule::class, DebtRecord::class, Receivable::class, InstallmentPlan::class],
-    version = 10,
+    entities = [Transaction::class, ParseRule::class, Account::class, Ledger::class, RecurringItem::class, MerchantRule::class, DebtRecord::class, Receivable::class, InstallmentPlan::class, Budget::class],
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun debtDao(): DebtDao
     abstract fun receivableDao(): ReceivableDao
     abstract fun installmentDao(): InstallmentDao
+    abstract fun budgetDao(): BudgetDao
 
     companion object {
         @Volatile
@@ -149,6 +151,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v10 → v11：新增按账本预算表 budgets（金额迁移见 BookkeepingApp.migrateLegacyBudgetPrefs） */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS budgets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        ledgerId INTEGER NOT NULL,
+                        monthlyAmount REAL NOT NULL,
+                        notifiedMonth TEXT,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_budgets_ledgerId ON budgets(ledgerId)")
+            }
+        }
+
+        /** v11 → v12：分期计划支持类型（自动记账/仅提醒）与记账账本 */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 现有分期默认保持 AUTO_TX（自动入账）行为，账本为 NULL = 跟随账户/默认账本
+                db.execSQL("ALTER TABLE installment_plans ADD COLUMN ledgerId INTEGER")
+                db.execSQL("ALTER TABLE installment_plans ADD COLUMN mode TEXT NOT NULL DEFAULT 'AUTO_TX'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_installment_plans_ledgerId ON installment_plans(ledgerId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -156,8 +186,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "bookkeeping.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
-                    // 兜底迁移：理论上永远不会走到，因为已配齐 v4→v10 所有 Migration。
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                    // 兜底迁移：理论上永远不会走到，因为已配齐 v4→v12 所有 Migration。
                     // 真走到这里说明某次发布忘了写 Migration，用户数据会被清空——务必显著日志。
                     .fallbackToDestructiveMigration()
                     .build()

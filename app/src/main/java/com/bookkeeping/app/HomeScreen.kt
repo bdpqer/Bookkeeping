@@ -126,6 +126,16 @@ internal fun HomeScreen(
     val todayIncome = homeSums.todayIncome
     val monthExpense = homeSums.monthExpense
     val monthIncome = homeSums.monthIncome
+    // 预算随选中账本联动：账本视图 = 该账本预算；全部账本视图 = 各账本预算合计
+    var budgetForView by remember { mutableStateOf(0.0) }
+    LaunchedEffect(selectedLedgerId, allTransactions) {
+        val ledgerId = selectedLedgerId // 委托属性不可 smart cast，先取局部变量
+        budgetForView = withContext(Dispatchers.IO) {
+            val bdao = db.budgetDao()
+            if (ledgerId == null) bdao.sumAllAmounts()
+            else bdao.getByLedger(ledgerId)?.monthlyAmount ?: 0.0
+        }
+    }
     var showLoanScreen by remember { mutableStateOf(false) }
     var showLedgerMenu by remember { mutableStateOf(false) }
     var showRecurringScreen by remember { mutableStateOf(false) }
@@ -424,8 +434,8 @@ internal fun HomeScreen(
             }
         }
 
-        // ── 本月预算卡 ──
-        item { HomeBudgetCard(monthExpense, getMonthlyBudget(context)) }
+        // ── 本月预算卡（预算金额与上方所选账本联动） ──
+        item { HomeBudgetCard(monthExpense, budgetForView) }
 
         // ── 账单报表（时间筛选 + 圆环图） ──
         if (allTransactions.isNotEmpty()) {
