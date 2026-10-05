@@ -1,8 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+}
+
+// release 签名：凭据放项目根目录 keystore.properties（已 gitignore），不进版本库
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 // Room schema 导出目录：8 个 Migration（v4→v12）可据此做迁移回归测试
@@ -28,10 +36,31 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystoreProps.isNotEmpty()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+            // minSdk=26，V2 签名已足够（Android 8.0+ 全支持 V2）；
+            // AGP 在此 minSdk 下会自动跳过 V1，属预期行为
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 没有 keystore.properties 时退化为不签名，保证换机器也能编译
+            signingConfig = if (keystoreProps.isNotEmpty()) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
         debug {
             isDebuggable = true
@@ -92,6 +121,14 @@ dependencies {
 
     // Biometric (密码锁/指纹)
     implementation("androidx.biometric:biometric:1.1.0")
+    // ⚠️ 必须显式声明：biometric:1.1.0 传递依赖的是 fragment:1.2.5，
+    // 而 1.2.5 的 FragmentActivity 仍在校验「requestCode 只能用低 16 位」，
+    // 与 activity:1.9.x 的 ActivityResultRegistry（生成 24 位 requestCode）冲突，
+    // 导致任何 rememberLauncherForActivityResult().launch() 直接抛
+    // IllegalArgumentException: Can only use lower 16 bits for requestCode（CSV 导入即崩溃）。
+    // fragment 1.3.0 起已移除该校验。MainActivity 为指纹解锁必须继承 FragmentActivity，
+    // 故此处只能升版本，不能改成 ComponentActivity。
+    implementation("androidx.fragment:fragment:1.8.2")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

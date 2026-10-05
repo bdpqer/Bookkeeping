@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>记账助手 隐私政策</title>
+<style>
+  :root{
+    --text:#1f2328; --muted:#5b6570; --line:#e3e6ea;
+    --accent:#2f6fed; --bg:#f6f7f9; --card:#ffffff;
+    --warn-bg:#fff8e1; --warn-line:#f0c000; --warn-text:#7a5b00;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:24px 16px 64px; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px; line-height:1.8;
+  }
+  .wrap{max-width:820px; margin:0 auto;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:32px 28px;}
+  h1{font-size:24px; margin:0 0 6px; letter-spacing:.5px;}
+  .meta{color:var(--muted); font-size:13px; margin-bottom:24px;}
+  h2{font-size:17px; margin:32px 0 10px; padding-left:10px; border-left:4px solid var(--accent); line-height:1.3;}
+  h3{font-size:15px; margin:20px 0 6px;}
+  p{margin:10px 0;}
+  ul{margin:10px 0; padding-left:22px;}
+  li{margin:6px 0;}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:14px;}
+  th,td{border:1px solid var(--line); padding:9px 11px; text-align:left; vertical-align:top;}
+  th{background:#f0f3f7; font-weight:600; white-space:nowrap;}
+  code{background:#f0f3f7; padding:1px 5px; border-radius:4px; font-size:13px;}
+  .banner{
+    background:var(--warn-bg); border:1px solid var(--warn-line); border-left-width:5px;
+    color:var(--warn-text); border-radius:8px; padding:14px 16px; margin-bottom:24px; font-size:14px;
+  }
+  .banner b{display:block; margin-bottom:4px;}
+  .key{background:#eef4ff; border-left:4px solid var(--accent); padding:14px 16px; border-radius:0 8px 8px 0; margin:16px 0;}
+  .foot{margin-top:32px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:13px;}
+  @media (max-width:520px){
+    .card{padding:22px 16px;} h1{font-size:20px;}
+    th,td{padding:7px 8px; font-size:13px;} body{font-size:14px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="card">
+
+  <div class="banner">
+    <b>⚠️ 本页面尚有 2 处待填写，发布前请勿提交给应用市场审核</b>
+    ① 第九条「开发者名称」 ② 第九条「联系邮箱」。
+  </div>
+
+  <h1>记账助手 隐私政策</h1>
+  <div class="meta">应用名称：记账助手　|　应用包名：com.bookkeeping.app　|　生效日期：2026 年 10 月 5 日　|　最后更新：2026 年 10 月 5 日</div>
+
+  <h2>一、引言</h2>
+  <p>「记账助手」（以下简称"本应用"）是一款运行在 Android 设备上的个人记账工具。我们深知个人信息对你的重要性，并会本着合法、正当、必要和诚信的原则处理你的信息。</p>
+  <p>本政策适用于你通过 Android 设备安装、使用本应用的整个过程。</p>
+
+  <div class="key">
+    <b>核心承诺：本应用是一款完全离线的本地记账工具，不收集、不上传你的任何个人信息与账目数据。</b><br>
+    本应用<strong>未申请网络访问权限</strong>（<code>android.permission.INTERNET</code>），且代码中不含任何网络通信实现，从技术层面即不具备将你的数据传输至外部服务器的条件。
+  </div>
+
+  <h2>二、我们如何收集和使用信息</h2>
+
+  <h3>2.1 我们不收集任何个人信息</h3>
+  <p>本应用不需要注册账号，不要求你提供姓名、手机号、邮箱、身份证号、地理位置、通讯录、设备标识符等任何可识别你个人身份的信息。本应用不含用户画像、行为追踪或个性化推荐功能。</p>
+
+  <h3>2.2 仅在你设备本地处理的数据</h3>
+  <p>你手动录入、或由本应用自动识别生成的账目数据（金额、收支方向、分类、账户、账本、备注、时间、商户名称等），全部仅保存在你设备上的应用私有数据库中（本地 SQLite），仅在设备本地用于向你展示账目明细、统计与账单报表。</p>
+  <p>本应用不会将上述数据回传、同步或备份至我们或任何第三方的服务器。</p>
+
+  <h3>2.3 权限使用说明</h3>
+  <p>为实现功能，本应用会申请以下系统权限。所有权限仅在你设备本地使用，你可以随时在系统设置中关闭：</p>
+  <table>
+    <thead>
+      <tr><th>权限</th><th>使用目的</th><th>数据处理方式</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>READ_SMS</code><br><code>RECEIVE_SMS</code><br>（短信权限）</td>
+        <td>识别银行、支付平台发送的交易短信，自动生成账目草稿，减少手动录入</td>
+        <td>短信内容仅在你设备本地解析。解析完成后不保存原始短信全文，且不会上传或分享给任何第三方</td>
+      </tr>
+      <tr>
+        <td>通知使用权<br>（Notification Listener）</td>
+        <td>识别支付类应用发出的交易通知，自动生成账目草稿</td>
+        <td>通知内容仅在你设备本地解析，不会上传</td>
+      </tr>
+      <tr>
+        <td><code>RECORD_AUDIO</code><br>（麦克风权限）</td>
+        <td>语音记账：说出消费内容后自动生成账目</td>
+        <td>语音识别由内置离线模型在你设备本地完成。录音文件不会被保存，也不会上传</td>
+      </tr>
+      <tr>
+        <td><code>POST_NOTIFICATIONS</code></td>
+        <td>展示"自动记账运行中"的常驻通知，让你知晓服务状态</td>
+        <td>不涉及数据</td>
+      </tr>
+      <tr>
+        <td><code>FOREGROUND_SERVICE</code><br><code>WAKE_LOCK</code></td>
+        <td>维持自动记账服务持续运行，避免被系统中断</td>
+        <td>不涉及数据</td>
+      </tr>
+      <tr>
+        <td><code>RECEIVE_BOOT_COMPLETED</code></td>
+        <td>设备重启后自动恢复自动记账服务</td>
+        <td>不涉及数据</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>本应用<strong>不申请</strong>以下权限：网络访问、读取通讯录、读取通话记录、读取应用列表、获取地理位置、读取相册、读取外部存储。</p>
+
+  <h2>三、信息的存储</h2>
+  <p><strong>3.1 存储位置</strong>：你的账目数据仅存储在设备本地的应用私有目录中（<code>/data/data/com.bookkeeping.app/databases</code>），其他应用无法访问。</p>
+  <p><strong>3.2 存储期限</strong>：由你自行决定。你可以随时在应用内删除单条账目，或在「设置 — 数据管理」中清空全部数据。卸载本应用会一并删除本应用的全部本地数据。</p>
+  <p><strong>3.3 关于系统备份</strong>：Android 系统提供的备份功能（若你在系统设置中开启，或你使用的手机厂商提供了云备份服务）可能会将应用数据一并保存至<strong>你自己的备份账户</strong>。该过程完全由操作系统执行，本应用无法读取、控制或访问该备份内容，也不会主动发起备份。你可以在系统设置中关闭备份功能。</p>
+
+  <h2>四、信息的对外提供与第三方共享</h2>
+  <p><strong>4.1</strong> 我们不会向任何第三方出售、出租、共享或转让你的信息。</p>
+  <p><strong>4.2</strong> 本应用未集成任何广告 SDK、统计分析 SDK、推送 SDK 或其他可能收集个人信息的第三方 SDK。所用的第三方组件（AndroidX、Jetpack Compose、Room、WorkManager、Glance、Biometric、Kotlin 协程、sherpa-onnx 离线语音识别引擎）均为本地功能库，不执行数据收集或上报。</p>
+  <p><strong>4.3 唯一的例外——由你主动发起的分享</strong>：当你主动使用「设置 — 数据管理 — 导出并分享」时，应用会将账目导出为 CSV 文件，并通过系统分享面板交由<strong>你自行选择</strong>的目标应用。是否分享、分享给谁完全由你决定，我们不参与也无法获知该传输过程及结果。</p>
+
+  <h2>五、信息安全</h2>
+  <p><strong>5.1 应用锁</strong>：本应用支持 PIN 码与生物识别解锁。PIN 码以 SHA-256 摘要形式保存在应用私有配置中，不保存明文；指纹、人脸等生物特征由系统生物识别模块处理，本应用无法接触生物特征原始数据。</p>
+  <p><strong>5.2</strong> 由于你的数据仅保存在本机且本应用不联网，数据安全性主要取决于你设备本身的安全状况（如锁屏密码、系统版本更新等）。建议你为设备设置锁屏密码并及时更新系统。</p>
+
+  <h2>六、你的权利</h2>
+  <p>你可以随时、无需联系我们，自行完成以下操作：</p>
+  <ul>
+    <li><strong>查看与更正</strong>：在应用内直接查看、修改任意账目记录</li>
+    <li><strong>导出</strong>：「设置 — 数据管理 — 导出并分享」，将全部账目导出为 CSV 文件</li>
+    <li><strong>删除</strong>：删除单条记录；或在「设置 — 数据管理」中清空全部数据；或直接卸载本应用</li>
+    <li><strong>撤回授权</strong>：在系统设置中关闭短信、通知使用权、麦克风等权限</li>
+  </ul>
+
+  <h2>七、未成年人保护</h2>
+  <p>本应用为通用型记账工具，不面向 14 周岁以下的儿童设计，也不会有意收集未成年人的个人信息。若未成年人需要使用本应用，请在监护人指导下进行，并由监护人阅读并同意本政策。</p>
+
+  <h2>八、本政策的更新</h2>
+  <p>当本应用的功能发生变更、进而导致信息处理方式发生变化时，我们会相应更新本政策，并在本页面及应用内公布更新内容与生效日期。更新后继续使用本应用，即表示你接受更新后的政策。</p>
+
+  <h2>九、联系我们</h2>
+  <p>如果你对本政策有任何疑问、意见或建议，或需要行使上述权利，可通过以下方式与我们联系：</p>
+  <ul>
+    <li><strong>开发者</strong>：<span style="background:#fff2a8;">【待填写：开发者名称】</span></li>
+    <li><strong>联系邮箱</strong>：<span style="background:#fff2a8;">【待填写：联系邮箱】</span></li>
+  </ul>
+  <p>我们将在收到你的反馈后 15 个工作日内予以回复。</p>
+
+  <div class="foot">
+    记账助手 · 隐私政策　|　本应用未申请网络访问权限，不具备向外部服务器传输数据的技术条件。
+  </div>
+
+</div>
+</div>
+</body>
+</html>

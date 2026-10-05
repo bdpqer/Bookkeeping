@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,10 +50,16 @@ internal fun Double.formatAmount(): String = String.format("%.2f", this)
 
 // ─── 单条交易 ─────────────────────────────────────────────
 
+/**
+ * @param inCard true 时不套自身的白色卡片，只渲染一行内容（带点击）。
+ *               用于外层容器已提供灰底的场景（如首页「最近交易」卡），
+ *               否则会出现「灰卡里叠一排白卡」的割裂视觉。默认 false 保持原样。
+ */
 @Composable
 internal fun TransactionItem(
     tx: Transaction,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    inCard: Boolean = false
 ) {
     val context = LocalContext.current
     val typeColor = when (tx.type) {
@@ -66,59 +73,134 @@ internal fun TransactionItem(
         Transaction.Type.TRANSFER -> "→"
     }
     val emoji = categoryEmoji(tx.category)
+    val hasReceipt = com.bookkeeping.app.ui.ReceiptStore.hasReceipt(context, tx.id)
 
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+    if (inCard) {
+        TransactionRow(
+            tx = tx,
+            sign = sign,
+            typeColor = typeColor,
+            emoji = emoji,
+            hasReceipt = hasReceipt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(vertical = 6.dp)
+        )
+    } else {
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable { onClick() },
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Box(
-                Modifier.size(36.dp).background(
-                    MaterialTheme.colorScheme.surfaceVariant,
-                    RoundedCornerShape(9.dp)
-                ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(emoji, fontSize = 18.sp)
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            TransactionRow(
+                tx = tx,
+                sign = sign,
+                typeColor = typeColor,
+                emoji = emoji,
+                hasReceipt = hasReceipt,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TransactionRow(
+    tx: Transaction,
+    sign: String,
+    typeColor: Color,
+    emoji: String,
+    hasReceipt: Boolean,
+    modifier: Modifier = Modifier
+) {
+    // 备注/商户的起始列宽：上下两行共用同一个宽度（7 个上行汉字位 = 14.sp × 7 = 98.sp），
+    // 这样备注与商户严格落在同一条垂直线上。
+    // 用 sp→dp 换算而非硬编码 dp，保证系统字体缩放时列宽同步变化。
+    val fontScale = LocalDensity.current.fontScale
+    val metaColumn = (98f * fontScale).dp
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(36.dp).background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(9.dp)
+            ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(emoji, fontSize = 18.sp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            // 上行：分类（固定占 metaColumn 宽）+ 备注。备注与分类同字号/字重（14.sp / Medium），
+            // 仅颜色降为次要色以区分主次；过长省略，不影响右侧金额。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(metaColumn), contentAlignment = Alignment.CenterStart) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            tx.category,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (hasReceipt) {
+                            Spacer(Modifier.width(4.dp))
+                            Text("📷", fontSize = 10.sp)
+                        }
+                    }
+                }
+                if (tx.note.isNotBlank()) {
                     Text(
-                        tx.category,
+                        tx.note.trim(),
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            // 下行：来源（同样占 metaColumn 宽，使商户与上行备注左对齐）+ 商户，与来源同格式
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(metaColumn), contentAlignment = Alignment.CenterStart) {
+                    Text(
+                        tx.source,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (com.bookkeeping.app.ui.ReceiptStore.hasReceipt(context, tx.id)) {
-                        Spacer(Modifier.width(4.dp))
-                        Text("📷", fontSize = 10.sp)
-                    }
                 }
-                Text(
-                    tx.source,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (tx.merchant.isNotBlank()) {
+                    Text(
+                        tx.merchant.trim(),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    "$sign${tx.amount.formatAmount()}",
-                    fontWeight = FontWeight.Bold,
-                    color = typeColor,
-                    fontSize = 16.sp
-                )
-                Text(
-                    formatTxTime(tx.occurredAt),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "$sign${tx.amount.formatAmount()}",
+                fontWeight = FontWeight.Bold,
+                color = typeColor,
+                fontSize = 16.sp
+            )
+            Text(
+                formatTxTime(tx.occurredAt),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

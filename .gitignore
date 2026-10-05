@@ -15,6 +15,8 @@ local.properties
 # 签名文件（勿提交）
 *.jks
 *.keystore
+keystore.properties
+keystore/
 
 # 日志与临时文件
 *.log
@@ -28,3 +30,6 @@ app/src/main/assets/model/
 
 # WorkBuddy 本地工作数据（记忆/任务，勿提交）
 .workbuddy/
+
+# WorkBuddy 临时产物
+*.genie

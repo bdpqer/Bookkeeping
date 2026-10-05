@@ -608,37 +608,9 @@ internal fun SettingsScreen(
             }
         }
 
-        // ── 数据管理 ──
-        item { Text("数据管理", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-        item {
-            val settingsScope = rememberCoroutineScope()
-            val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) {
-                    settingsScope.launch {
-                        val (ok, skip) = importCsvFromUri(context, uri)
-                        android.widget.Toast.makeText(
-                            context, "导入完成：新增 $ok 条，跳过重复 $skip 条", android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            }
-            Card(shape = RoundedCornerShape(12.dp)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("将所有交易记录导出为 CSV 分享，或从 CSV 文件导入（自动跳过重复记录）",
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
-                    Row {
-                        androidx.compose.material3.Button(
-                            onClick = { importLauncher.launch(arrayOf("text/*", "application/octet-stream")) }
-                        ) { Text("📥 从文件导入") }
-                        Spacer(Modifier.width(12.dp))
-                        androidx.compose.material3.Button(
-                            onClick = { settingsScope.launch { exportAndShareCsv(context) } }
-                        ) { Text("📤 导出并分享") }
-                    }
-                }
-            }
-        }
+        // 注：原「数据管理」区的 CSV 导出/导入卡片已移除——
+        // 汉堡菜单（HomeScreen 抽屉）里的 onExport / onImport 走的是同一组
+        // exportAndShareCsv() / importCsvFromUri()，功能完全等价，避免重复入口。
 
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

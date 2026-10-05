@@ -17,9 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -68,7 +66,6 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.util.Calendar
 import com.bookkeeping.app.theme.BrandBlue
-import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.theme.TransferOrange
 
 // ─── 首页：今日汇总 + 最近交易 ─────────────────────────────────
@@ -303,23 +300,11 @@ internal fun HomeScreen(
                     fontWeight = FontWeight.SemiBold,
                     showDefaultMark = true
                 )
+                // 云朵备份入口已移除：抽屉菜单里有同样入口，顶栏只保留搜索（靠右）
                 Icon(
                     Icons.Default.Search, contentDescription = "搜索",
                     modifier = Modifier.clickable { showSearchDialog = true }.padding(2.dp)
                 )
-                Box {
-                    Text(
-                        "☁️", fontSize = 18.sp,
-                        modifier = Modifier.clickable { showBackupDialog = true }.padding(2.dp)
-                    )
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 6.dp, end = 6.dp)
-                            .size(7.dp)
-                            .background(DangerRed, CircleShape)
-                    )
-                }
             }
 
     LazyColumn(
@@ -389,32 +374,50 @@ internal fun HomeScreen(
         if (recentTransactions.isEmpty()) {
             item {
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                    // 复用 EmptyState：原先此处自建一套（emoji 40.sp / 间距 6.dp），
-                    // 与其他页面的空态（48.sp / 12.dp）视觉不一致
-                    EmptyState(
-                        emoji = "☕",
-                        message = "当前没有数据，快去添加一笔吧~",
-                        fillParent = false
-                    )
+                    Column(Modifier.padding(14.dp)) {
+                        Text("最近交易", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        // 复用 EmptyState：原先此处自建一套（emoji 40.sp / 间距 6.dp），
+                        // 与其他页面的空态（48.sp / 12.dp）视觉不一致
+                        EmptyState(
+                            emoji = "☕",
+                            message = "当前没有数据，快去添加一笔吧~",
+                            fillParent = false
+                        )
+                    }
                 }
             }
         } else {
-            item { Text("最近交易", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-            items(recentTransactions, key = { it.id }) { tx ->
-                TransactionItem(tx)
-            }
-            if (recentTransactions.size > 5) {
-                item {
-                    Text(
-                        "更多明细 >",
-                        fontSize = 13.sp,
-                        color = BrandBlue,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigate(Tab.LIST) }
-                            .padding(top = 4.dp, bottom = 2.dp),
-                        textAlign = TextAlign.Center
-                    )
+            // 与「本月预算」「账单报表」一致：整块套灰底卡片。
+            // 内部用普通 Column 而非 items —— 最多 5 条，无需 lazy 复用，
+            // 且 items 无法嵌进 Card 的子作用域。
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.padding(14.dp)) {
+                        // 卡片内分隔线：与 ManualAddDialog 一致的极淡描边，避免灰底上出现硬边
+                        val dividerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                        Text("最近交易", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Spacer(Modifier.height(2.dp))
+                        recentTransactions.forEachIndexed { i, tx ->
+                            if (i > 0) {
+                                HorizontalDivider(color = dividerColor)
+                            }
+                            TransactionItem(tx, inCard = true)
+                        }
+                        // 原判断为 recentTransactions.size > 5，而该列表已 take(5)，条件恒为 false
+                        if (allTransactions.size > recentTransactions.size) {
+                            HorizontalDivider(color = dividerColor)
+                            Text(
+                                "更多明细 >",
+                                fontSize = 13.sp,
+                                color = BrandBlue,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigate(Tab.LIST) }
+                                    .padding(top = 8.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
         }

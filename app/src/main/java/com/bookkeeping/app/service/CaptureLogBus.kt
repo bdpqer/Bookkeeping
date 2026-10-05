@@ -10,6 +10,9 @@ import com.bookkeeping.app.formatTime
  */
 object CaptureLogBus {
 
+    /** 调试面板保留的最大条数。纯内存存储，进程被杀即清空，故上限只影响内存占用（约 500 × 数 KB） */
+    const val MAX_ENTRIES = 500
+
     /** 自增序号：为每条记录生成稳定的唯一 key，供 LazyColumn 使用 */
     private val uidSeq = java.util.concurrent.atomic.AtomicLong(0)
 
@@ -35,8 +38,9 @@ object CaptureLogBus {
 
     fun add(entry: CaptureEntry) {
         _entries.add(0, entry)
-        // 限制最多 200 条，防止内存膨胀
-        if (_entries.size > 200) _entries.subList(200, _entries.size).clear()
+        // 限制最多 500 条，防止内存膨胀。
+        // 注意：只按条数截断，不按时间过期——老记录会一直留到被新记录挤掉为止。
+        if (_entries.size > MAX_ENTRIES) _entries.subList(MAX_ENTRIES, _entries.size).clear()
         val snapshot = _entries.toList()
         listeners.forEach { it(snapshot) }
         Log.d(BookkeepingApp.TAG, "📥 ${entry.source} [${entry.displayTime}] ${entry.packageName ?: entry.sender}: ${entry.rawText.take(80)}")
