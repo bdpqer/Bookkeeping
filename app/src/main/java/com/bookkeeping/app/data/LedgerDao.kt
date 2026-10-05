@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import com.bookkeeping.app.data.entity.Ledger
 
 @Dao
@@ -13,17 +12,11 @@ interface LedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(ledger: Ledger): Long
 
-    @Update
-    suspend fun update(ledger: Ledger)
-
     @Query("DELETE FROM ledgers WHERE id = :id")
     suspend fun delete(id: Long)
 
     @Query("SELECT * FROM ledgers ORDER BY isDefault DESC, id ASC")
     suspend fun getAll(): List<Ledger>
-
-    @Query("SELECT * FROM ledgers WHERE id = :id")
-    suspend fun getById(id: Long): Ledger?
 
     @Query("SELECT * FROM ledgers WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefault(): Ledger?

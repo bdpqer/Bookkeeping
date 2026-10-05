@@ -1,63 +1,54 @@
 package com.bookkeeping.app.ui
 
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.categoryEmoji
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.ConfirmDialog
 import com.bookkeeping.app.EmptyState
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.BrandBlue
-
-private val deletedTimeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-private val occurredTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+import com.bookkeeping.app.formatTime
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.formatAmount
+import kotlinx.coroutines.launch
 
 /** 保留 30 天后自动清除 */
 private const val RETENTION_DAYS = 30L
@@ -117,12 +108,8 @@ fun RecycleBinScreen(onClose: () -> Unit) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onClose,
                 title = { Text("回收站", fontWeight = FontWeight.Bold) },
                 actions = {
                     if (list.isNotEmpty()) {
@@ -130,8 +117,7 @@ fun RecycleBinScreen(onClose: () -> Unit) {
                             Text("清空回收站", color = ExpenseRed)
                         }
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->
@@ -166,34 +152,24 @@ fun RecycleBinScreen(onClose: () -> Unit) {
     }
 
     purgeTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { purgeTarget = null },
-            title = { Text("彻底删除", fontWeight = FontWeight.Bold) },
-            text = { Text("该记录将从回收站中永久删除，无法恢复。确定删除吗？") },
-            confirmButton = {
-                TextButton(onClick = { purgeTarget = null; purge(target) }) {
-                    Text("彻底删除", color = ExpenseRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { purgeTarget = null }) { Text("取消") }
-            }
+        ConfirmDialog(
+            title = "彻底删除",
+            message = "该记录将从回收站中永久删除，无法恢复。确定删除吗？",
+            confirmLabel = "彻底删除",
+            destructive = true,
+            onConfirm = { purgeTarget = null; purge(target) },
+            onDismiss = { purgeTarget = null }
         )
     }
 
     if (showClearAll) {
-        AlertDialog(
-            onDismissRequest = { showClearAll = false },
-            title = { Text("清空回收站", fontWeight = FontWeight.Bold) },
-            text = { Text("共 ${list.size} 条记录将被永久删除，无法恢复。确定清空吗？") },
-            confirmButton = {
-                TextButton(onClick = { showClearAll = false; purgeAll() }) {
-                    Text("全部删除", color = ExpenseRed)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearAll = false }) { Text("取消") }
-            }
+        ConfirmDialog(
+            title = "清空回收站",
+            message = "共 ${list.size} 条记录将被永久删除，无法恢复。确定清空吗？",
+            confirmLabel = "全部删除",
+            destructive = true,
+            onConfirm = { showClearAll = false; purgeAll() },
+            onDismiss = { showClearAll = false }
         )
     }
 }
@@ -251,7 +227,7 @@ private fun DeletedTxItem(
                     }
                 }
                 Text(
-                    "原记录 ${occurredTimeFormat.format(Date(tx.occurredAt))} · 删除于 ${deletedTimeFormat.format(Date(tx.deletedAt))}",
+                    "原记录 ${formatTime(tx.occurredAt, "yyyy-MM-dd HH:mm")} · 删除于 ${formatTime(tx.deletedAt, "MM-dd HH:mm")}",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

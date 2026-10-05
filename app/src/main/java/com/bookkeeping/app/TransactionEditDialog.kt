@@ -76,7 +76,7 @@ fun TransactionEditDialog(
     var selectedAccountId by remember { mutableStateOf<Long?>(tx.accountId) }
     var selectedLedgerId by remember { mutableStateOf<Long?>(tx.ledgerId) }
 
-    val categories = categoriesFor(selectedType)
+    val categories = remember(selectedType) { categoriesFor(selectedType) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {

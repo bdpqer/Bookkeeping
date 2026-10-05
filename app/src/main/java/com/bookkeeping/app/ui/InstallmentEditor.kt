@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.sanitizeAmountInput
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.ReportDatePicker
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
@@ -28,10 +28,7 @@ import com.bookkeeping.app.worker.RecurringWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.formatTime
@@ -116,12 +113,8 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onBack,
                 title = {
                     Text(
                         "账单分期",
@@ -134,8 +127,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     TextButton(onClick = { doNextOrCreate() }) {
                         Text(if (showPreview) "确认创建" else "下一步")
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->
@@ -178,8 +170,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                             OutlinedTextField(
                                 value = amountText,
                                 onValueChange = { v ->
-                                    v.filter { it.isDigit() || it == '.' }
-                                        .let { if (it.count { c -> c == '.' } <= 1) amountText = it }
+                                    sanitizeAmountInput(v)?.let { amountText = it }
                                 },
                                 singleLine = true,
                                 textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
@@ -232,8 +223,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                 OutlinedTextField(
                     value = feeText,
                     onValueChange = { v ->
-                        v.filter { it.isDigit() || it == '.' }
-                            .let { if (it.count { c -> c == '.' } <= 1) feeText = it }
+                        sanitizeAmountInput(v)?.let { feeText = it }
                     },
                     label = { Text("手续费总额（可选）") },
                     singleLine = true,
@@ -318,8 +308,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                                     Column(Modifier.weight(1f)) {
                                         Text("第${p}期", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                         Text(
-                                            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                                                .format(Date(installmentDueDate(firstDate, p))),
+                                            formatTime(installmentDueDate(firstDate, p), "yyyy-MM-dd"),
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )

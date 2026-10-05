@@ -3,6 +3,8 @@ package com.bookkeeping.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,10 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +35,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
@@ -154,7 +164,7 @@ internal fun TxLedgerRow(
             ) {
                 Text(
                     ledgers.firstOrNull { it.id == selectedLedgerId }
-                        ?.let { "${it.icon} ${it.name}" } ?: "",
+                        ?.let { "${it.icon} ${it.name}" } ?: "未选择",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -172,4 +182,56 @@ internal fun TxLedgerRow(
             }
         }
     }
+}
+
+/**
+ * 通用确认对话框：全项目 13 处「标题 + 说明 + 取消/确认」都是同一套骨架，
+ * 差别仅在文案、确认按钮文案与是否为危险操作（红色）。
+ */
+@Composable
+internal fun ConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    dismissLabel: String = "取消",
+    destructive: Boolean = false
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = if (destructive) ExpenseRed else MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(dismissLabel) }
+        }
+    )
+}
+
+/**
+ * 二级页面统一顶栏：7 处二级页的返回按钮 + 零 insets 窗口设置完全一致，
+ * 只有标题（文本或账本下拉）与右侧操作不同。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun DetailTopBar(
+    onBack: () -> Unit,
+    title: @Composable () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {}
+) {
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
+        },
+        title = title,
+        actions = actions,
+        windowInsets = WindowInsets(0, 0, 0, 0)
+    )
 }

@@ -143,7 +143,7 @@ fun ManualAddDialog(
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
     var selectedLedgerId by remember { mutableStateOf<Long?>(null) }
 
-    val categories = categoriesFor(selectedType)
+    val categories = remember(selectedType) { categoriesFor(selectedType) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {

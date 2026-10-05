@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.TransactionDao
 import com.bookkeeping.app.data.entity.Transaction
+import com.bookkeeping.app.theme.ChartPalette
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import java.util.Calendar
@@ -65,13 +66,7 @@ private data class ReportData(
     val incSlices: List<TransactionDao.CategorySum>
 )
 
-private val ReportPalette = listOf(
-    Color(0xFF4E79A7), Color(0xFFF28E2B), Color(0xFFE15759), Color(0xFF76B7B2),
-    Color(0xFF59A14F), Color(0xFFEDC948), Color(0xFFB07AA1), Color(0xFFFF9DA7),
-    Color(0xFF9C755F), Color(0xFFBAB0AC)
-)
-
-private fun reportColor(i: Int): Color = ReportPalette[i % ReportPalette.size]
+private fun reportColor(i: Int): Color = ChartPalette[i % ChartPalette.size]
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -332,8 +327,10 @@ private fun SixMonthTrend(all: List<Transaction>) {
             Triple(formatTime(start, "M月"), expArr[i], incArr[i])
         }
     }
-    val maxV = months.maxOf { maxOf(it.second, it.third) }.coerceAtLeast(0.01)
-    val currentLabel = formatNow("M月")
+    val maxV = remember(months) {
+        months.maxOf { maxOf(it.second, it.third) }.coerceAtLeast(0.01)
+    }
+    val currentLabel = remember { formatNow("M月") }
 
     Column {
         HorizontalDivider()
@@ -404,7 +401,7 @@ private fun MiniSegmented(label: String, selected: Boolean, onClick: () -> Unit)
 /** 圆环图：各分类按占比画弧，弧间留 3° 间隙 */
 @Composable
 private fun DonutChart(slices: List<TransactionDao.CategorySum>, modifier: Modifier = Modifier) {
-    val total = slices.sumOf { it.total }.coerceAtLeast(0.01)
+    val total = remember(slices) { slices.sumOf { it.total }.coerceAtLeast(0.01) }
     Canvas(modifier) {
         val stroke = 34.dp.toPx()
         val gap = 3f
@@ -427,8 +424,7 @@ private fun DonutChart(slices: List<TransactionDao.CategorySum>, modifier: Modif
     }
 }
 
-/** 分类切片：Top8 之外合并为「其他」 */
-/** 分类切片：按金额降序，超过 9 类时把第 9 名之后合并为「其他」 */
+/** 分类切片：Top8 之外合并为「其他」；按金额降序，超过 9 类时把第 9 名之后合并 */
 private fun buildSlicesFromTotals(
     totals: Map<String, Double>
 ): List<TransactionDao.CategorySum> {

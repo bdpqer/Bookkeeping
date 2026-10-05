@@ -30,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +65,7 @@ internal fun PendingScreen() {
     val db = remember { AppDatabase.getInstance(context) }
     // Flow 订阅：自动捕获入库后由 Room InvalidationTracker 实时推送，无需手动刷新
     val pending by remember(db) { db.transactionDao().observePending() }
-        .collectAsState(initial = emptyList())
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
     var confirmingAll by remember { mutableStateOf(false) }
 
@@ -110,7 +110,7 @@ internal fun PendingScreen() {
                     }
                 }
             } else {
-                items(pending) { tx ->
+                items(pending, key = { it.id }) { tx ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { editingTx = tx },
                         shape = RoundedCornerShape(12.dp),
@@ -186,7 +186,6 @@ internal fun PendingScreen() {
 
 @Composable
 internal fun TransactionListScreen() {
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
@@ -217,7 +216,7 @@ internal fun TransactionListScreen() {
             kw.isBlank() -> db.transactionDao().observeAll()
             else -> db.transactionDao().observeSearch(kw)
         }
-    }.collectAsState(initial = emptyList<Transaction>())
+    }.collectAsStateWithLifecycle(initialValue = emptyList<Transaction>())
     // 时间过滤包 remember：仅在数据或筛选范围变化时重算，避免每次重组全表过滤
     val transactions = remember(baseList, timeRange) {
         if (timeRange != null) baseList.filter { it.occurredAt in timeRange.first..timeRange.second }
@@ -365,7 +364,7 @@ internal fun TransactionListScreen() {
                     }
                 }
             } else {
-                items(transactions) { tx ->
+                items(transactions, key = { it.id }) { tx ->
                     TransactionItem(
                         tx = tx,
                         onClick = { editingTx = tx }

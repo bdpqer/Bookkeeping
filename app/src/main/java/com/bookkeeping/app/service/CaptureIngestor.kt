@@ -1,6 +1,7 @@
 package com.bookkeeping.app.service
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.checkBudgetAndNotify
 import com.bookkeeping.app.data.AppDatabase
@@ -59,16 +60,29 @@ object CaptureIngestor {
 
         val tx = parsed.withDefaultAssociation(db)
 
-        val dupes = db.transactionDao().findDuplicate(
-            tx.amount, tx.type.name, tx.merchant,
-            tx.occurredAt - DUP_WINDOW_MS, tx.occurredAt + DUP_WINDOW_MS
-        )
-        if (dupes.isNotEmpty()) {
-            FileLog.append(context, "service.log", "⏭️ [$logTag] 重复交易跳过 amt=${tx.amount} type=${tx.type}")
+        // 去重 + 入库放在同一事务里：否则并发的两条捕获（通知与短信同时到）
+        // 可能双双通过去重检查，然后各自 insert，同一笔交易入账两次
+        val id = db.withTransaction {
+            val dupes = db.transactionDao().findDuplicate(
+                amountCents = Math.round(tx.amount * 100),
+                type = tx.type.name,
+                merchant = tx.merchant,
+                since = tx.occurredAt - DUP_WINDOW_MS,
+                until = tx.occurredAt + DUP_WINDOW_MS
+            )
+            if (dupes.isNotEmpty()) {
+                FileLog.append(context, "service.log", "⏭️ [$logTag] 重复交易跳过 amt=${tx.amount} type=${tx.type}")
+                return@withTransaction null
+            }
+            db.transactionDao().insert(tx)
+        } ?: run {
+            FileLog.append(
+                context, "service.log",
+                "❌ [$logTag] 入库失败或命中重复 amt=${tx.amount} type=${tx.type}"
+            )
             return null
         }
 
-        val id = db.transactionDao().insert(tx)
         FileLog.append(
             context, "service.log",
             "✅ [$logTag] 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}"

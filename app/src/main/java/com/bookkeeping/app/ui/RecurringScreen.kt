@@ -1,28 +1,21 @@
 package com.bookkeeping.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.EmptyState
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
@@ -32,17 +25,22 @@ import com.bookkeeping.app.data.entity.RecurringItem
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.BrandBlue
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.theme.TransferOrange
 import com.bookkeeping.app.theme.WarmCardBg
 import com.bookkeeping.app.formatTime
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.formatAmount
+import kotlinx.coroutines.launch
 
 internal val BlueColor = BrandBlue
 
@@ -89,12 +87,8 @@ fun RecurringScreen(onClose: () -> Unit) {
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
-                    TopAppBar(
-                        navigationIcon = {
-                            IconButton(onClick = onClose) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                            }
-                        },
+                    DetailTopBar(
+                        onBack = onClose,
                         title = {
                             Text(
                                 "周期记账",
@@ -107,8 +101,7 @@ fun RecurringScreen(onClose: () -> Unit) {
                             IconButton(onClick = { showCreateMenu = true }) {
                                 Icon(Icons.Outlined.AddCircle, contentDescription = "新增")
                             }
-                        },
-                        windowInsets = WindowInsets(0, 0, 0, 0)
+                        }
                     )
                 }
             ) { padding ->
@@ -463,8 +456,9 @@ private fun InstallmentDetailDialog(
                     for (p in 1..plan.installments) {
                         val (principal, fee) = installmentPeriodAmounts(plan, p)
                         val paid = p <= plan.paidPeriods
-                        val dateText = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                            .format(Date(installmentDueDate(plan.firstDate, p)))
+                        // 用缓存的 DateTimeFormatter（formatTime），原先在此 new SimpleDateFormat
+                        // 会让每帧每期都创建对象并重新解析 pattern
+                        val dateText = formatTime(installmentDueDate(plan.firstDate, p), "yyyy-MM-dd")
                         val amountText = (principal + fee).formatAmount()
 
                         Row(

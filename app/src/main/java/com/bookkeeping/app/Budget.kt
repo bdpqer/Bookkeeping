@@ -21,7 +21,6 @@ fun isNotificationListenerEnabled(context: Context): Boolean {
 
 // ─── 按账本预算管理（v11） ─────────────────────────────────
 
-private const val CHANNEL_BUDGET_ALERT = "budget_alert"
 /** 通知 ID：勿用 1001，那是通知监听服务的前台通知 ID，撞号会顶掉前台通知 */
 private const val BUDGET_NOTIF_ID = 1002
 
@@ -78,14 +77,15 @@ private suspend fun checkBudgetAndNotifyForLedger(context: Context, ledgerId: Lo
         if (spent <= budget) return
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        // minSdk=26 起 NotificationChannel 必需，无需版本分支
+        // 渠道在 BookkeepingApp.onCreate 统一创建（重复 createNotificationChannel 是幂等的，
+        // 这里再调一次只为兼容进程被杀后重建的情况）
         nm.createNotificationChannel(
             android.app.NotificationChannel(
-                CHANNEL_BUDGET_ALERT, "预算超支提醒",
+                BookkeepingApp.CHANNEL_ID_BUDGET_ALERT, "预算超支提醒",
                 android.app.NotificationManager.IMPORTANCE_DEFAULT
             )
         )
-        val notif = androidx.core.app.NotificationCompat.Builder(context, CHANNEL_BUDGET_ALERT)
+        val notif = androidx.core.app.NotificationCompat.Builder(context, BookkeepingApp.CHANNEL_ID_BUDGET_ALERT)
             .setSmallIcon(com.bookkeeping.app.R.drawable.ic_launcher_foreground)
             .setContentTitle("⚠️ 本月预算已超支")
             .setContentText("本月已支出 ¥${spent.formatAmount()}，超出预算 ¥${(spent - budget).formatAmount()}")

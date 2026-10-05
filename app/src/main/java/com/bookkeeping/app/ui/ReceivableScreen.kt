@@ -1,41 +1,43 @@
 package com.bookkeeping.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.theme.ExpenseRedFaint
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.LedgerDropdownTitle
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Receivable
-import com.bookkeeping.app.embeddedImePadding
+import com.bookkeeping.app.sanitizeAmountInput
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.theme.SuccessGreen
 import com.bookkeeping.app.theme.TransferOrange
 import com.bookkeeping.app.formatTime
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.embeddedImePadding
+import com.bookkeeping.app.formatAmount
+import kotlinx.coroutines.launch
+import com.bookkeeping.app.TxLedgerRow
 
+import com.bookkeeping.app.EmptyState
 /** 应收/应付款管理页 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,12 +66,8 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onClose,
                 title = {
                     LedgerDropdownTitle(
                         ledgers = ledgers,
@@ -81,8 +79,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                     IconButton(onClick = { editingItem = null; showEditDialog = true }) {
                         Icon(Icons.Outlined.AddCircle, contentDescription = "新增")
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->
@@ -100,28 +97,26 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                 )
             }
 
-            val pendingList = list.filter { it.status == Receivable.Status.PENDING }
-            val doneList = list.filter { it.status == Receivable.Status.DONE }
+            // 派生列表缓存：原先裸写在 Composable body 里，每次重组都做两次全表过滤
+            val (pendingList, doneList) = remember(list) {
+                list.partition { it.status == Receivable.Status.PENDING }
+            }
+            // 今日零点只算一次，避免每行都新建 Calendar
+            val todayStart = remember {
+                Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+            }
 
             if (list.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (tab == 0) "💰" else "💸", fontSize = 48.sp)
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            if (tab == 0) "暂无应收款" else "暂无应付款",
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "点右上角环形加号「新增」\n（如房租、信用卡、报销待回款）",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+                EmptyState(
+                    emoji = if (tab == 0) "💰" else "💸",
+                    message = if (tab == 0) "暂无应收款" else "暂无应付款",
+                    subMessage = "点右上角环形加号「新增」\n（如房租、信用卡、报销待回款）"
+                )
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -164,6 +159,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                         ReceivableRow(
                             r = r,
                             isReceivable = tab == 0,
+                            todayStart = todayStart,
                             onClick = { editingItem = r; showEditDialog = true },
                             onMarkDone = {
                                 scope.launch {
@@ -194,6 +190,7 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
                             ReceivableRow(
                                 r = r,
                                 isReceivable = tab == 0,
+                                todayStart = todayStart,
                                 onClick = { editingItem = r; showEditDialog = true },
                                 onMarkDone = {},
                                 onReopen = {
@@ -234,18 +231,13 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
 private fun ReceivableRow(
     r: Receivable,
     isReceivable: Boolean,
+    todayStart: Long,
     onClick: () -> Unit,
     onMarkDone: () -> Unit,
     onReopen: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val today = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
-    val isOverdue = r.status == Receivable.Status.PENDING && r.dueDate < today
+    val isOverdue = r.status == Receivable.Status.PENDING && r.dueDate < todayStart
     val isDone = r.status == Receivable.Status.DONE
     val dueStr = formatTime(r.dueDate, "yyyy-MM-dd")
     val amountColor = when {
@@ -288,7 +280,7 @@ private fun ReceivableRow(
                                 fontSize = 10.sp,
                                 color = DangerRed,
                                 modifier = Modifier
-                                    .background(Color(0x22E53935), RoundedCornerShape(4.dp))
+                                    .background(ExpenseRedFaint, RoundedCornerShape(4.dp))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
@@ -422,33 +414,13 @@ private fun ReceivableEditDialog(
                 }
 
                 Spacer(Modifier.height(12.dp))
-                // 账本选择行
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("记账账本", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        Row(
-                            Modifier.then(if (forcedLedgerId == null) Modifier.clickable { ledMenu = true } else Modifier),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                ledgers.firstOrNull { it.id == selLedgerId }?.let { "${it.icon} ${it.name}" } ?: "未选择",
-                                fontSize = 14.sp, fontWeight = FontWeight.Medium
-                            )
-                            if (forcedLedgerId == null) {
-                                Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        DropdownMenu(expanded = ledMenu, onDismissRequest = { ledMenu = false }) {
-                            ledgers.forEach { led ->
-                                DropdownMenuItem(
-                                    text = { Text("${led.icon} ${led.name}") },
-                                    onClick = { ledMenu = false; selLedgerId = led.id }
-                                )
-                            }
-                        }
-                    }
-                }
+                // 账本选择行（复用 TxLedgerRow，forcedLedgerId 非空时锁定不可切换）
+                TxLedgerRow(
+                    ledgers = ledgers,
+                    selectedLedgerId = selLedgerId,
+                    onSelect = { selLedgerId = it },
+                    locked = forcedLedgerId != null
+                )
 
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -462,7 +434,10 @@ private fun ReceivableEditDialog(
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' }; error = null },
+                    onValueChange = {
+                        amountText = sanitizeAmountInput(it) ?: return@OutlinedTextField
+                        error = null
+                    },
                     label = { requiredLabel("金额") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()

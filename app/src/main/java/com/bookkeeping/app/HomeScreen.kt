@@ -40,7 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
+import com.bookkeeping.app.theme.BannerGradient
+import com.bookkeeping.app.theme.ExpenseRedSoft
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
@@ -96,10 +98,11 @@ internal fun HomeScreen(
     val allTransactions by remember(selectedLedgerId) {
         if (selectedLedgerId == null) db.transactionDao().observeAll()
         else db.transactionDao().observeByLedger(selectedLedgerId!!)
-    }.collectAsState(initial = emptyList<Transaction>())
-    val recentTransactions = allTransactions.take(8)
+    }.collectAsStateWithLifecycle(initialValue = emptyList<Transaction>())
     // 汇总包 remember：仅在交易数据变化或跨天时重算（单次遍历），避免每次重组 4 次全表过滤
-    val homeSums = remember(allTransactions, LocalDate.now().toEpochDay()) {
+    val todayEpochDay = LocalDate.now().toEpochDay()
+    val recentTransactions = remember(allTransactions) { allTransactions.take(5) }
+    val homeSums = remember(allTransactions, todayEpochDay) {
         val todayRange = startOfToday()..endOfToday()
         val monthRange = startOfMonth()..endOfMonth()
         var tExp = 0.0
@@ -245,25 +248,22 @@ internal fun HomeScreen(
         )
     }
     pendingRestoreUri?.let { uri ->
-        AlertDialog(
-            onDismissRequest = { pendingRestoreUri = null },
-            title = { Text("确认恢复备份？", fontWeight = FontWeight.Bold) },
-            text = { Text("恢复将覆盖当前全部数据（交易、规则、账户、账本等），覆盖后无法撤销。") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    pendingRestoreUri = null
-                    scope.launch {
-                        if (restoreDatabaseFromUri(context, uri)) {
-                            android.widget.Toast.makeText(context, "恢复成功，正在重启…", android.widget.Toast.LENGTH_SHORT).show()
-                            kotlinx.coroutines.delay(600)
-                            restartApp(context)
-                        }
+        ConfirmDialog(
+            title = "确认恢复备份？",
+            message = "恢复将覆盖当前全部数据（交易、规则、账户、账本等），覆盖后无法撤销。",
+            confirmLabel = "覆盖并恢复",
+            destructive = true,
+            onConfirm = {
+                pendingRestoreUri = null
+                scope.launch {
+                    if (restoreDatabaseFromUri(context, uri)) {
+                        android.widget.Toast.makeText(context, "恢复成功，正在重启…", android.widget.Toast.LENGTH_SHORT).show()
+                        kotlinx.coroutines.delay(600)
+                        restartApp(context)
                     }
-                }) { Text("覆盖并恢复", color = ExpenseRed) }
+                }
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { pendingRestoreUri = null }) { Text("取消") }
-            }
+            onDismiss = { pendingRestoreUri = null }
         )
     }
 
@@ -335,7 +335,7 @@ internal fun HomeScreen(
                     .fillMaxWidth()
                     .background(
                         androidx.compose.ui.graphics.Brush.horizontalGradient(
-                            listOf(Color(0xFF4A90D9), Color(0xFF7EC8E3), Color(0xFFE8C468))
+                            BannerGradient
                         ),
                         RoundedCornerShape(18.dp)
                     )
@@ -364,9 +364,12 @@ internal fun HomeScreen(
 
         // ── 今日行 ──
         item {
-            val cal = java.util.Calendar.getInstance()
-            val weekDay = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1]
-            val dateStr = String.format("%02d-%02d %s", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH), weekDay)
+            // 跨天才变：键入 epochDay 避免每次重组重建 Calendar 与星期数组
+            val dateStr = remember(todayEpochDay) {
+                val cal = java.util.Calendar.getInstance()
+                val weekDay = WEEK_LABELS[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+                String.format("%02d-%02d %s", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH), weekDay)
+            }
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("📅", fontSize = 18.sp)
@@ -386,18 +389,18 @@ internal fun HomeScreen(
         if (recentTransactions.isEmpty()) {
             item {
                 Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 64.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("☕", fontSize = 40.sp)
-                            Spacer(Modifier.height(6.dp))
-                            Text("当前没有数据，快去添加一笔吧~", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    // 复用 EmptyState：原先此处自建一套（emoji 40.sp / 间距 6.dp），
+                    // 与其他页面的空态（48.sp / 12.dp）视觉不一致
+                    EmptyState(
+                        emoji = "☕",
+                        message = "当前没有数据，快去添加一笔吧~",
+                        fillParent = false
+                    )
                 }
             }
         } else {
             item { Text("最近交易", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-            items(recentTransactions.take(5)) { tx ->
+            items(recentTransactions, key = { it.id }) { tx ->
                 TransactionItem(tx)
             }
             if (recentTransactions.size > 5) {
@@ -648,7 +651,7 @@ private fun HomeBudgetCard(monthExpense: Double, budget: Double) {
         Column(Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(34.dp).background(Color(0x1AE53935), androidx.compose.foundation.shape.CircleShape),
+                    Modifier.size(34.dp).background(ExpenseRedSoft, androidx.compose.foundation.shape.CircleShape),
                     contentAlignment = Alignment.Center
                 ) { Text("🎯", fontSize = 16.sp) }
                 Spacer(Modifier.width(10.dp))
@@ -683,9 +686,11 @@ private fun HomeBudgetCard(monthExpense: Double, budget: Double) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${monthExpense.formatAmount()} / ${budget.formatAmount()}",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val cal = Calendar.getInstance()
-                    val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-                    val remainingDays = (daysInMonth - cal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
+                    val remainingDays = remember {
+                        val cal = Calendar.getInstance()
+                        val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+                        (daysInMonth - cal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
+                    }
                     Text("剩余日均 ${((budget - monthExpense).coerceAtLeast(0.0) / remainingDays).formatAmount()}",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -717,3 +722,6 @@ private fun endOfMonth(): Long = Calendar.getInstance().apply {
     set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59)
     set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
 }.timeInMillis
+
+/** 星期索引（Calendar.DAY_OF_WEEK 从 1=周日 开始） */
+private val WEEK_LABELS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")

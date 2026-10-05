@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.lifecycleScope
+import com.bookkeeping.app.theme.FabBg
 import com.bookkeeping.app.data.entity.Transaction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,7 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -170,7 +171,7 @@ private fun MainScaffold(
     val db = remember { AppDatabase.getInstance(context) }
     // 待确认角标：Flow 订阅实时更新（入库/确认/删除由 Room 自动推送）
     val pendingCount by remember(db) { db.transactionDao().observePendingCount() }
-        .collectAsState(initial = 0)
+        .collectAsStateWithLifecycle(initialValue = 0)
 
     Scaffold(
         topBar = {
@@ -287,7 +288,7 @@ private fun MainScaffold(
                                 dragY = (dragY + dragAmount.y).coerceIn(-maxDragY, 0f)
                             }
                         }
-                        .background(Color(0xFFDCEBFF), RoundedCornerShape(20.dp))
+                        .background(FabBg, RoundedCornerShape(20.dp))
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = { showAddDialog = true },

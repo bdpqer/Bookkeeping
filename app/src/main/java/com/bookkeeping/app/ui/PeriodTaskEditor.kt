@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.sanitizeAmountInput
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.ReportDatePicker
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.RecurringItem
@@ -118,12 +118,8 @@ internal fun PeriodTaskEditor(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onBack,
                 title = {
                     Text(
                         "周期任务",
@@ -136,8 +132,7 @@ internal fun PeriodTaskEditor(
                     TextButton(onClick = { doSave() }) {
                         Text(if (editing) "保存" else "创建")
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->
@@ -228,8 +223,7 @@ internal fun PeriodTaskEditor(
                             OutlinedTextField(
                                 value = amountText,
                                 onValueChange = { v ->
-                                    v.filter { it.isDigit() || it == '.' }
-                                        .let { if (it.count { c -> c == '.' } <= 1) amountText = it }
+                                    sanitizeAmountInput(v)?.let { amountText = it }
                                 },
                                 label = { Text("金额") },
                                 singleLine = true,

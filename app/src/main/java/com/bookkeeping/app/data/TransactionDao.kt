@@ -51,12 +51,12 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE confirmed = 0 AND deletedAt = 0")
     fun observePendingCount(): Flow<Int>
 
-    /** 确认入账 */
-    @Query("UPDATE transactions SET confirmed = 1 WHERE id = :id")
+    /** 确认入账。加 deletedAt = 0 与 observePending 保持一致：回收站中的记录不该被确认 */
+    @Query("UPDATE transactions SET confirmed = 1 WHERE id = :id AND deletedAt = 0")
     suspend fun confirm(id: Long)
 
-    /** 批量确认 */
-    @Query("UPDATE transactions SET confirmed = 1 WHERE confirmed = 0")
+    /** 批量确认。同样排除回收站，否则一键确认会把回收站里的记录一起翻正 */
+    @Query("UPDATE transactions SET confirmed = 1 WHERE confirmed = 0 AND deletedAt = 0")
     suspend fun confirmAll()
 
     /** Flow 变体：明细页搜索 */
@@ -91,15 +91,29 @@ interface TransactionDao {
     """)
     suspend fun searchQuick(q: String, qFmt: String): List<Transaction>
 
+    /**
+     * 重复检测：同金额 / 同类型 / 同商户 / 时间窗内。
+     *
+     * 金额用「分」的整数区间比较（`amount * 100` 加减 1 分），
+     * 避免原先 `ABS(amount - :amount) < 0.01` 两种问题：
+     *  1. 函数包裹列导致索引用不上
+     *  2. 浮点误差下两笔真实不同的交易（相差不足 1 分）会被误判为重复而丢弃
+     */
     @Query("""
         SELECT * FROM transactions
-        WHERE ABS(amount - :amount) < 0.01
+        WHERE amount * 100 BETWEEN :amountCents - 1 AND :amountCents + 1
           AND type = :type
           AND merchant = :merchant
           AND occurredAt BETWEEN :since AND :until
           AND deletedAt = 0
     """)
-    suspend fun findDuplicate(amount: Double, type: String, merchant: String, since: Long, until: Long): List<Transaction>
+    suspend fun findDuplicate(
+        amountCents: Long,
+        type: String,
+        merchant: String,
+        since: Long,
+        until: Long
+    ): List<Transaction>
 
     @Query("""
         SELECT COALESCE(SUM(amount), 0.0) FROM transactions 

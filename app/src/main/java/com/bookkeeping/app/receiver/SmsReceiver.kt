@@ -13,10 +13,11 @@ import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.service.CaptureIngestor
 import com.bookkeeping.app.service.CaptureLogBus
+import com.bookkeeping.app.service.RuleEngineCache
 import com.bookkeeping.app.data.AppDatabase
-import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -54,34 +55,26 @@ class SmsReceiver : BroadcastReceiver() {
         private const val MAX_PROCESSED_IDS = 500
 
         /** 已处理的短信去重键（进程内，按插入顺序淘汰） */
-        private val processedIds = LinkedHashSet<Long>()
+        private val processedIds = LinkedHashSet<String>()
+
+        /**
+         * 解析/入库用的常驻协程作用域。
+         * 原实现每条短信 `CoroutineScope(Dispatchers.IO).launch {}` 新建一个无 Job 的裸 scope，
+         * 协程无法被取消，Receiver 生命周期结束后仍在跑。
+         */
+        private val ingestScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /**
          * 登记去重键：已存在返回 false（应跳过），否则写入并返回 true。
          * 超过 [MAX_PROCESSED_IDS] 时淘汰最早加入的键。
          */
-        private fun markProcessed(key: Long): Boolean {
+        private fun markProcessed(key: String): Boolean {
             synchronized(processedIds) {
                 if (!processedIds.add(key)) return false
                 while (processedIds.size > MAX_PROCESSED_IDS) {
                     processedIds.remove(processedIds.first())
                 }
                 return true
-            }
-        }
-
-        /** 规则缓存 */
-        @Volatile private var cachedRules: List<com.bookkeeping.app.data.entity.ParseRule> = emptyList()
-
-        /** 从 DB 刷新规则（每次解析前都会尝试，开销很小） */
-        private suspend fun getEngine(context: Context): ParseEngine {
-            return try {
-                val db = AppDatabase.getInstance(context)
-                val rules = db.parseRuleDao().getEnabled()
-                val merchantRules = db.merchantRuleDao().getEnabled()
-                ParseEngine(rules, merchantRules)
-            } catch (_: Exception) {
-                ParseEngine() // fallback 到默认规则
             }
         }
 
@@ -97,19 +90,21 @@ class SmsReceiver : BroadcastReceiver() {
             if (!context.getSharedPreferences("settings", Context.MODE_PRIVATE)
                     .getBoolean("auto_capture_enabled", true)) return
 
-            // 进程内去重：同一条短信可能被 BroadcastReceiver 和 ContentObserver 同时捕获。
-            // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+3分钟桶）统一去重；
-            // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±3 分钟）兜底。
-            val dedupKey = (sender + "|" + body + "|" + time / (3 * 60 * 1000)).hashCode().toLong()
-            if (!markProcessed(dedupKey)) {
-                fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
-                return
-            }
-
-            // 关键词过滤（只记录疑似支付/银行的短信）
+            // 关键词过滤（只记录疑似支付/银行的短信）。
+            // 必须放在去重登记之前：否则一条验证码短信也会占用去重槽位，把真正的支付短信挤掉。
             val relevant = containsPaymentKeyword(body) || senderLooksLikeBank(sender)
             if (!relevant) {
                 fileLog("📭 跳过非支付短信 [$sender] ${body.take(60)}")
+                return
+            }
+
+            // 进程内去重：同一条短信可能被 BroadcastReceiver 和 ContentObserver 同时捕获。
+            // 两条路径的 ID 不同（临时 ID vs 数据库 ID），改用内容键（发件人+正文+3分钟桶）统一去重；
+            // 极少数跨桶边界漏网的由 DB 层 findDuplicate（同金额 ±3 分钟）兜底。
+            // 用完整键字符串而非 hashCode()：hashCode 是 32 位，强制转 Long 会丢高位，碰撞率远高于预期。
+            val dedupKey = "$sender|$body|${time / (3 * 60 * 1000)}"
+            if (!markProcessed(dedupKey)) {
+                fileLog("⏭️ 跳过重复短信 id=$smsId sender=$sender")
                 return
             }
 
@@ -134,11 +129,11 @@ class SmsReceiver : BroadcastReceiver() {
             CaptureLogBus.add(entry)
 
             // ─── 解析 + 入库 ────────────────────────────────────────
-            CoroutineScope(Dispatchers.IO).launch {
+            ingestScope.launch {
                 CaptureIngestor.ingest(
                     context = context,
                     db = AppDatabase.getInstance(context),
-                    engine = getEngine(context),
+                    engine = RuleEngineCache.get(context),
                     rawText = body,
                     channel = senderToChannel(sender),
                     occurredAt = time,
@@ -189,35 +184,49 @@ class SmsReceiver : BroadcastReceiver() {
 /**
  * ContentObserver 兜底：直接监听 content://sms 数据库变化。
  * 在 BookkeepingApp.onCreate 中注册。
+ *
+ * ⚠️ 必须传入 **IO 线程** 的 Handler：onChange 里要查 content://sms（磁盘读），
+ * 用主 Looper 会触发 StrictMode 磁盘读违规。
  */
 class SmsContentObserver(handler: Handler) : ContentObserver(handler) {
 
+    /**
+     * 已处理的最大短信 _ID。ContentObserver 可能因任何变化触发回调（含状态更新），
+     * 用它做增量过滤，既避免重复处理，也避免只取最新一条而漏掉同批到达的多条短信。
+     */
+    @Volatile
+    private var lastHandledId: Long = 0L
+
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
-        // 只关注 inbox 的新增
-        if (uri != null && uri.pathSegments.contains("inbox").not() && uri != Telephony.Sms.CONTENT_URI) {
-            return
-        }
-        queryLatestAndHandle()
+        // 只关注收件箱：其余 URI（sent/draft/thread）不产生待记账的入账短信
+        if (uri != null && !uri.pathSegments.contains("inbox")) return
+        queryNewAndHandle()
     }
 
-    private fun queryLatestAndHandle() {
+    private fun queryNewAndHandle() {
         val ctx = BookkeepingApp.instance
+        val from = lastHandledId
         try {
             ctx.contentResolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI,
                 arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-                null, null,
-                "${Telephony.Sms.DATE} DESC LIMIT 1"
+                // 增量：只取比上次处理更新的，同批到达的多条都能覆盖到
+                "${Telephony.Sms._ID} > ?",
+                arrayOf(from.toString()),
+                "${Telephony.Sms._ID} ASC"
             )?.use { cursor: Cursor ->
-                if (cursor.moveToFirst()) {
+                var maxId = from
+                while (cursor.moveToNext()) {
                     val id = cursor.getLong(0)
                     val address = cursor.getString(1) ?: ""
                     val body = cursor.getString(2) ?: ""
                     val date = cursor.getLong(3) // Telephony.Sms.DATE 本身就是毫秒，勿再 ×1000
-
+                    if (id > maxId) maxId = id
                     SmsReceiver.handleSms(ctx, address, body, date, id, "ContentObserver")
                 }
+                // 无论是否有支付短信都要推进游标，否则同一批会被反复扫描
+                if (maxId > from) lastHandledId = maxId
             }
         } catch (e: Exception) {
             Log.e(BookkeepingApp.TAG, "SmsContentObserver query failed", e)

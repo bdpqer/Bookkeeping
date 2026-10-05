@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.EmptyState
 import com.bookkeeping.app.LedgerDropdownTitle
 import com.bookkeeping.app.categoryEmoji
@@ -80,12 +80,8 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onClose,
                 title = {
                     LedgerDropdownTitle(
                         ledgers = ledgers,
@@ -97,8 +93,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                     IconButton(onClick = { showAddDialog = true }) {
                         Icon(Icons.Outlined.AddCircle, contentDescription = "新增")
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->

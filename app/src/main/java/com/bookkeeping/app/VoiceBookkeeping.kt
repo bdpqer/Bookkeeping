@@ -38,6 +38,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.bookkeeping.app.theme.VoiceWarning
+import com.bookkeeping.app.theme.VoiceSuccess
+import com.bookkeeping.app.theme.VoiceHint
 import com.bookkeeping.app.data.entity.Transaction
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -347,6 +350,8 @@ internal fun VoiceRecordOverlay(
                 val phase by session.phase.collectAsState()
                 val partial by session.partial.collectAsState()
                 val level by session.level.collectAsState()
+                // 预览与「记一笔」按钮共用同一次解析结果，避免同一帧重复跑正则
+                val parsed = remember(partial) { parseVoicePrefill(partial) }
 
                 DisposableEffect(Unit) {
                     session.start()
@@ -383,7 +388,7 @@ internal fun VoiceRecordOverlay(
                         VoiceSession.Phase.DONE -> "识别结果"
                         VoiceSession.Phase.ERROR -> "没听清，再试一次"
                     }
-                    Text(hint, color = Color(0xFFB9C6DC), fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Text(hint, color = VoiceHint, fontSize = 14.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
                     Text(
                         partial.ifEmpty { " " },
@@ -391,18 +396,18 @@ internal fun VoiceRecordOverlay(
                         textAlign = TextAlign.Center, lineHeight = 32.sp
                     )
                     if (phase == VoiceSession.Phase.DONE) {
-                        val p = parseVoicePrefill(partial)
+                        val p = parsed
                         Spacer(Modifier.height(8.dp))
                         if (p != null) {
                             Text(
                                 "金额 ¥${p.amount} · ${if (p.type == Transaction.Type.INCOME) "收入" else "支出"}" +
                                     (p.category?.let { " · $it" } ?: ""),
-                                color = Color(0xFF7EE38B), fontSize = 14.sp
+                                color = VoiceSuccess, fontSize = 14.sp
                             )
                         } else {
                             Text(
                                 "未识别到金额，可在弹窗中手动补填",
-                                color = Color(0xFFFFC857), fontSize = 14.sp
+                                color = VoiceWarning, fontSize = 14.sp
                             )
                         }
                     }
@@ -428,7 +433,7 @@ internal fun VoiceRecordOverlay(
                             colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                         ) { Text("完成", color = Color.White) }
                         VoiceSession.Phase.DONE -> {
-                            val p = parseVoicePrefill(partial)
+                            val p = parsed
                             Button(
                                 // 金额没识别出来也允许进入弹窗手动补填（备注带原始识别文本）
                                 onClick = {

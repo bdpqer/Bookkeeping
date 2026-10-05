@@ -1,14 +1,15 @@
 package com.bookkeeping.app.worker
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.MainActivity
@@ -20,9 +21,13 @@ import com.bookkeeping.app.data.entity.RecurringItem
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.data.entity.installmentDueDate
 import com.bookkeeping.app.data.entity.installmentPeriodAmounts
+import com.bookkeeping.app.formatTime
 import java.util.Calendar
+import java.util.concurrent.TimeUnit
 import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.withDefaultAssociation
+import androidx.room.withTransaction
+import com.bookkeeping.app.round2
 
 /**
  * 周期调度 Worker：
@@ -40,59 +45,74 @@ class RecurringWorker(
     override suspend fun doWork(): Result {
         val db = AppDatabase.getInstance(applicationContext)
         val now = System.currentTimeMillis()
+        var failed = false
 
-        // 1. 处理信用卡账单分期：独立于周期任务执行，不因周期任务无到期项而跳过
-        //    （否则只有分期计划时，到期期数永远不会入账/提醒）
-        processInstallments(db, now)
+        try {
+            // 1. 处理信用卡账单分期：独立于周期任务执行，不因周期任务无到期项而跳过
+            //    （否则只有分期计划时，到期期数永远不会入账/提醒）
+            processInstallments(db, now)
 
-        // 2. 找出所有到期的周期任务
-        val due = db.recurringDao().getDue(now)
-        if (due.isEmpty()) {
-            scheduleNext(applicationContext, db)
-            return Result.success()
-        }
+            // 2. 找出所有到期的周期任务
+            val due = db.recurringDao().getDue(now)
+            Log.i(BookkeepingApp.TAG, "🔁 RecurringWorker: ${due.size} item(s) due")
 
-        Log.i(BookkeepingApp.TAG, "🔁 RecurringWorker: ${due.size} item(s) due")
-
-        for (item in due) {
-            try {
-                when (item.mode) {
-                    RecurringItem.Mode.REMIND -> sendReminder(item)
-                    RecurringItem.Mode.AUTO_TX -> autoInsertTx(db, item)
-                }
-                // 已运行次数 +1，计算下一次运行时间，并按结束条件决定是否停用
-                val newRunCount = item.runCount + 1
-                val nextRun = computeNextRun(item, now)
-                val shouldStop = when (item.endMode) {
-                    RecurringItem.EndMode.NEVER -> false
-                    RecurringItem.EndMode.AFTER_COUNT ->
-                        item.endAfterCount != null && newRunCount >= item.endAfterCount
-                    RecurringItem.EndMode.ON_DATE ->
-                        item.endDate != null && nextRun > item.endDate
-                }
-                db.recurringDao().update(
-                    item.copy(
-                        runCount = newRunCount,
-                        nextRunAt = nextRun,
-                        isEnabled = if (shouldStop) false else item.isEnabled
+            for (item in due) {
+                try {
+                    when (item.mode) {
+                        RecurringItem.Mode.REMIND -> sendReminder(item)
+                        RecurringItem.Mode.AUTO_TX -> autoInsertTx(db, item)
+                    }
+                    // 已运行次数 +1，计算下一次运行时间，并按结束条件决定是否停用
+                    val newRunCount = item.runCount + 1
+                    val nextRun = computeNextRun(item, now)
+                    val shouldStop = when (item.endMode) {
+                        RecurringItem.EndMode.NEVER -> false
+                        RecurringItem.EndMode.AFTER_COUNT ->
+                            item.endAfterCount != null && newRunCount >= item.endAfterCount
+                        RecurringItem.EndMode.ON_DATE ->
+                            item.endDate != null && nextRun > item.endDate
+                    }
+                    db.recurringDao().update(
+                        item.copy(
+                            runCount = newRunCount,
+                            nextRunAt = nextRun,
+                            isEnabled = if (shouldStop) false else item.isEnabled
+                        )
                     )
-                )
-                if (shouldStop) {
-                    Log.i(BookkeepingApp.TAG, "🏁 ${item.name} 达到结束条件，已停用")
+                    if (shouldStop) {
+                        Log.i(BookkeepingApp.TAG, "🏁 ${item.name} 达到结束条件，已停用")
+                    }
+                } catch (e: Exception) {
+                    // 单项失败：也要推进 nextRunAt，否则该项会被 getDue 反复命中形成活锁
+                    Log.e(BookkeepingApp.TAG, "RecurringWorker error for ${item.name}", e)
+                    failed = true
+                    runCatching {
+                        db.recurringDao().update(
+                            item.copy(runCount = item.runCount + 1, nextRunAt = computeNextRun(item, now))
+                        )
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(BookkeepingApp.TAG, "RecurringWorker error for ${item.name}", e)
             }
+        } catch (e: Exception) {
+            Log.e(BookkeepingApp.TAG, "RecurringWorker doWork failed", e)
+            failed = true
+        } finally {
+            // 预算超支检查已下沉到 autoInsertTx / processInstallments 中
+            // （按每笔交易实际归属账本独立检查，不再全账本汇总）
+            // 无论成败都必须排下一次，否则一次 DB 异常就会让整条调度链永久停摆
+            runCatching { scheduleNext(applicationContext, db) }
+                .onFailure { Log.e(BookkeepingApp.TAG, "scheduleNext failed", it) }
         }
 
-        // 预算超支检查已下沉到 autoInsertTx / processInstallments 中
-        // （按每笔交易实际归属账本独立检查，不再全账本汇总）
-
-        scheduleNext(applicationContext, db)
-        return Result.success()
+        return if (failed) Result.retry() else Result.success()
     }
 
-    /** 分期计划：把所有已到期但未入账的期数处理掉（自动入账或仅提醒） */
+    /**
+     * 分期计划：把所有已到期但未入账的期数处理掉（自动入账或仅提醒）。
+     *
+     * 每个计划包在一个数据库事务里：若不这样做，第 3 期 insert 成功后进程崩溃、
+     * paidPeriods 尚未推进，下次 worker 会把同一期再入账一次（该路径不走 findDuplicate 去重）。
+     */
     private suspend fun processInstallments(db: AppDatabase, now: Long) {
         val plans = try {
             db.installmentDao().getActive()
@@ -101,59 +121,78 @@ class RecurringWorker(
             return
         }
         for (plan in plans) {
-            try {
-                var updated = plan
-                var changed = false
-                while (updated.paidPeriods < updated.installments) {
-                    val periodNo = updated.paidPeriods + 1
-                    val due = installmentDueDate(updated.firstDate, periodNo)
-                    if (due > now) break
-
-                    val (principal, fee) = installmentPeriodAmounts(updated, periodNo)
-                    val account = db.accountDao().getById(updated.accountId)
-                    val amount = principal + fee
-
-                    if (updated.mode == InstallmentPlan.Mode.REMIND) {
-                        // 仅提醒：推送通知并推进期数，不生成交易
-                        sendInstallmentReminder(updated, periodNo, amount, account?.name ?: "信用卡", due)
-                    } else {
-                        val tx = Transaction(
-                            amount = amount,
-                            type = Transaction.Type.EXPENSE,
-                            category = updated.category,
-                            merchant = account?.name ?: "信用卡",
-                            source = "账单分期",
-                            accountId = updated.accountId,
-                            ledgerId = updated.ledgerId, // 显式记账账本（null = 跟随账户/默认账本）
-                            note = buildString {
-                                append("账单分期 第${periodNo}/${updated.installments}期")
-                                if (fee > 0) append("（本金${principal.formatAmount()} 手续费${fee.formatAmount()}）")
-                            },
-                            rawText = "[分期] ${account?.name ?: ""} 第$periodNo 期",
-                            isManual = false,
-                            confirmed = true,
-                            confidence = Transaction.Confidence.HIGH,
-                            occurredAt = System.currentTimeMillis()
-                        )
-                        val savedTx = tx.withDefaultAssociation(db)
-                        db.transactionDao().insert(savedTx)
-                        // 预算超支检查：按该笔实际归属账本（每账本每月最多提醒一次）
-                        savedTx.ledgerId?.let { checkBudgetAndNotify(applicationContext, ledgerId = it) }
-                        Log.i(BookkeepingApp.TAG,
-                            "💳 分期入账 plan=${updated.id} 第${periodNo}/${updated.installments}期 ¥$amount")
-                    }
-
-                    updated = updated.copy(
-                        paidPeriods = periodNo,
-                        status = if (periodNo >= updated.installments) InstallmentPlan.Status.DONE
-                                 else InstallmentPlan.Status.ACTIVE
-                    )
-                    changed = true
-                }
-                if (changed) db.installmentDao().update(updated)
+            // 账户名在整个循环中不变，查一次即可（原实现每期都查一次，12 期 = 12 次 N+1）
+            val accountName = try {
+                db.accountDao().getById(plan.accountId)?.name ?: "信用卡"
             } catch (e: Exception) {
-                Log.e(BookkeepingApp.TAG, "Installment process error plan=${plan.id}", e)
+                Log.e(BookkeepingApp.TAG, "processInstallments: getById failed plan=${plan.id}", e)
+                "信用卡"
             }
+
+            // 事务内只做 DB 写；通知与预算检查放事务外，避免长事务拖住 IO
+            val pending = try {
+                db.withTransaction {
+                    var updated = plan
+                    val due = mutableListOf<Triple<Int, Double, Long>>() // 期数, 金额, 到期日
+                    val ledgerIds = mutableSetOf<Long?>()
+                    while (updated.paidPeriods < updated.installments) {
+                        val periodNo = updated.paidPeriods + 1
+                        val dueAt = installmentDueDate(updated.firstDate, periodNo)
+                        if (dueAt > now) break
+
+                        val (principal, fee) = installmentPeriodAmounts(updated, periodNo)
+                        val amount = (principal + fee).round2()
+
+                        if (updated.mode == InstallmentPlan.Mode.REMIND) {
+                            // 仅提醒：推进期数，不生成交易
+                            due += Triple(periodNo, amount, dueAt)
+                        } else {
+                            val tx = Transaction(
+                                amount = amount,
+                                type = Transaction.Type.EXPENSE,
+                                category = updated.category,
+                                merchant = accountName,
+                                source = "账单分期",
+                                accountId = updated.accountId,
+                                ledgerId = updated.ledgerId, // 显式记账账本（null = 跟随账户/默认账本）
+                                note = buildString {
+                                    append("账单分期 第$periodNo/${updated.installments}期")
+                                    if (fee > 0) append("（本金${principal.formatAmount()} 手续费${fee.formatAmount()}）")
+                                },
+                                rawText = "[分期] $accountName 第$periodNo 期",
+                                isManual = false,
+                                confirmed = true,
+                                confidence = Transaction.Confidence.HIGH,
+                                occurredAt = System.currentTimeMillis()
+                            )
+                            val savedTx = tx.withDefaultAssociation(db)
+                            db.transactionDao().insert(savedTx)
+                            ledgerIds += savedTx.ledgerId
+                            Log.i(BookkeepingApp.TAG,
+                                "💳 分期入账 plan=${updated.id} 第$periodNo/${updated.installments}期 ¥$amount")
+                        }
+
+                        updated = updated.copy(
+                            paidPeriods = periodNo,
+                            status = if (periodNo >= updated.installments) InstallmentPlan.Status.DONE
+                                     else InstallmentPlan.Status.ACTIVE
+                        )
+                    }
+                    if (updated != plan) db.installmentDao().update(updated)
+                    due to ledgerIds
+                }
+            } catch (e: Exception) {
+                // 事务回滚：已插入的交易与期数推进一起撤销，不会出现半截数据
+                Log.e(BookkeepingApp.TAG, "Installment process error plan=${plan.id}", e)
+                continue
+            }
+
+            val (reminders, ledgerIds) = pending
+            reminders.forEach { (periodNo, amount, dueAt) ->
+                sendInstallmentReminder(plan, periodNo, amount, accountName, dueAt)
+            }
+            // 预算超支检查：按该笔实际归属账本（每账本每月最多提醒一次）
+            ledgerIds.forEach { checkBudgetAndNotify(applicationContext, ledgerId = it) }
         }
     }
 
@@ -165,75 +204,59 @@ class RecurringWorker(
         accountName: String,
         due: Long
     ) {
-        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val requestCode = (plan.id * 31 + 7).toInt()
+        val body = "$accountName 第$periodNo/${plan.installments}期 ¥${amount.formatAmount()}" +
+            "（还款日 ${formatTime(due, "yyyy-MM-dd")}）"
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID_RECURRING,
-                "账单提醒",
-                NotificationManager.IMPORTANCE_DEFAULT
-            )
-            nm.createNotificationChannel(channel)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            applicationContext, (plan.id * 31 + 7).toInt(),
-            Intent(applicationContext, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        postNotification(
+            tag = "${NOTIF_TAG}installment_${plan.id}",
+            requestCode = requestCode,
+            title = "💳 账单分期提醒",
+            body = body,
+            bigText = true
         )
-
-        val dueText = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-            .format(java.util.Date(due))
-        val body = "$accountName 第$periodNo/${plan.installments}期 ¥${amount.formatAmount()}（还款日 $dueText）"
-
-        val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID_RECURRING)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("💳 账单分期提醒")
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        nm.notify("${NOTIF_TAG}installment_${plan.id}", (plan.id * 31 + 7).toInt(), notif)
         Log.i(BookkeepingApp.TAG, "⏰ 分期提醒 plan=${plan.id} 第$periodNo/${plan.installments}期 ¥$amount")
     }
 
     private fun sendReminder(item: RecurringItem) {
-        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID_RECURRING,
-                "账单提醒",
-                NotificationManager.IMPORTANCE_DEFAULT
-            )
-            nm.createNotificationChannel(channel)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            applicationContext, item.id.toInt(),
-            Intent(applicationContext, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val body = buildString {
             append(item.name)
             item.amount?.let { append(" ¥${it.formatAmount()}") }
             if (item.note.isNotBlank()) append(" — ${item.note}")
         }
+        postNotification(
+            tag = "${NOTIF_TAG}${item.id}",
+            requestCode = item.id.toInt(),
+            title = "⏰ 账单提醒：${item.name}",
+            body = body,
+            bigText = false
+        )
+    }
 
-        val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID_RECURRING)
+    /** 分期提醒与周期提醒共用的通知构建（原先两份 PendingIntent + Builder 逐字重复） */
+    private fun postNotification(
+        tag: String,
+        requestCode: Int,
+        title: String,
+        body: String,
+        bigText: Boolean
+    ) {
+        val ctx = applicationContext
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val pendingIntent = PendingIntent.getActivity(
+            ctx, requestCode,
+            Intent(ctx, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(ctx, CHANNEL_ID_RECURRING)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("⏰ 账单提醒：${item.name}")
+            .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .build()
-
-        nm.notify("${NOTIF_TAG}${item.id}", item.id.toInt(), notif)
+        if (bigText) builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        nm.notify(tag, requestCode, builder.build())
     }
 
     private suspend fun autoInsertTx(db: AppDatabase, item: RecurringItem) {
@@ -258,7 +281,7 @@ class RecurringWorker(
         val saved = tx.withDefaultAssociation(db)
         db.transactionDao().insert(saved)
         // 预算超支检查：按该笔实际归属账本（每账本每月最多提醒一次）
-        saved.ledgerId?.let { checkBudgetAndNotify(applicationContext, ledgerId = it) }
+        checkBudgetAndNotify(applicationContext, ledgerId = saved.ledgerId)
         Log.i(BookkeepingApp.TAG, "✅ Auto-inserted recurring tx: ${item.name} amt=${item.amount}")
     }
 
@@ -266,12 +289,24 @@ class RecurringWorker(
         const val CHANNEL_ID_RECURRING = "recurring_reminder"
         const val NOTIF_TAG = "recurring_"
 
+        /** Calendar 的 DAY_OF_WEEK（周日=1）→ ISO 星期（周一=1..周日=7） */
+        private fun toIsoWeekday(cal: Calendar): Int =
+            ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+
         /** 计算下一次运行时间 */
         fun computeNextRun(item: RecurringItem, from: Long): Long {
             val cal = Calendar.getInstance().apply { timeInMillis = from }
             when (item.period) {
                 RecurringItem.Period.DAILY -> cal.add(Calendar.DAY_OF_MONTH, 1)
-                RecurringItem.Period.WEEKLY -> cal.add(Calendar.WEEK_OF_YEAR, 1)
+                RecurringItem.Period.WEEKLY -> {
+                    // 先加一周，再对齐到用户指定的星期。
+                    // 不对齐会让「每周三」的任务按创建日逐周平移，界面显示与实际执行永久错位。
+                    cal.add(Calendar.WEEK_OF_YEAR, 1)
+                    val target = item.dayOfWeek
+                    if (target != null) {
+                        cal.add(Calendar.DAY_OF_MONTH, target - toIsoWeekday(cal))
+                    }
+                }
                 RecurringItem.Period.MONTHLY -> {
                     // 先把"日"置为 1，再加月份：避免 31 号在 add(MONTH) 时溢出到下下个月，
                     // 之后再钳制到目标月的实际最大天数。
@@ -298,7 +333,7 @@ class RecurringWorker(
         /** 排下一次 OneTimeWorkRequest（suspend：从协程上下文直接 await DB，不再 runBlocking）。
          *  触发源 = 周期任务下次运行 ∪ 分期计划下一期到期，保证只有分期时也能按期触发。 */
         suspend fun scheduleNext(context: Context, db: AppDatabase) {
-            val nextRecurring = db.recurringDao().getAllEnabled().minOfOrNull { it.nextRunAt }
+            val nextRecurring = db.recurringDao().nextEnabledRunAt()
             val nextPlanDue = try {
                 db.installmentDao().getActive()
                     .mapNotNull { plan ->
@@ -317,21 +352,19 @@ class RecurringWorker(
         }
 
         private fun enqueue(context: Context, delayMs: Long) {
-            val request = androidx.work.OneTimeWorkRequestBuilder<RecurringWorker>()
-                .setInitialDelay(delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            val request = OneTimeWorkRequestBuilder<RecurringWorker>()
+                .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
                 .build()
-            androidx.work.WorkManager.getInstance(context)
-                .enqueueUniqueWork("recurring_next",
-                    androidx.work.ExistingWorkPolicy.REPLACE, request)
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork("recurring_next", ExistingWorkPolicy.REPLACE, request)
             Log.d(BookkeepingApp.TAG, "⏳ RecurringWorker scheduled in ${delayMs / 60000} min")
         }
 
         /** 立即触发一次（用于开机 + 首次启动） */
         fun triggerNow(context: Context) {
-            val request = androidx.work.OneTimeWorkRequestBuilder<RecurringWorker>().build()
-            androidx.work.WorkManager.getInstance(context)
-                .enqueueUniqueWork("recurring_next",
-                    androidx.work.ExistingWorkPolicy.REPLACE, request)
+            val request = OneTimeWorkRequestBuilder<RecurringWorker>().build()
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork("recurring_next", ExistingWorkPolicy.REPLACE, request)
         }
     }
 }

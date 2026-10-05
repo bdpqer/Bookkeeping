@@ -1,30 +1,20 @@
 package com.bookkeeping.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AddCircle
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,43 +25,49 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.theme.LentCardLabel
+import com.bookkeeping.app.theme.BorrowCardLabel
+import com.bookkeeping.app.theme.BorrowCardBg
+import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.LedgerDropdownTitle
-import com.bookkeeping.app.withDefaultAssociation
+import com.bookkeeping.app.sanitizeAmountInput
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.DebtRecord
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.BrandBlueDeep
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.theme.LentOrange
 import com.bookkeeping.app.theme.SuccessGreen
 import com.bookkeeping.app.theme.WarmCardBg
-
-private val debtDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+import com.bookkeeping.app.formatTime
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.withDefaultAssociation
+import kotlinx.coroutines.launch
+import com.bookkeeping.app.TxLedgerRow
 
 /** 借贷管理全屏页：借出/借入列表 + 新增 + 还款冲抵 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,12 +101,8 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
+            DetailTopBar(
+                onBack = onClose,
                 title = {
                     LedgerDropdownTitle(
                         ledgers = ledgers,
@@ -122,8 +114,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                     IconButton(onClick = { showAdd = true }) {
                         Icon(Icons.Outlined.AddCircle, contentDescription = "新增")
                     }
-                },
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                }
             )
         }
     ) { padding ->
@@ -139,7 +130,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("别人欠我", fontSize = 12.sp, color = Color(0xFF8D6E63))
+                        Text("别人欠我", fontSize = 12.sp, color = LentCardLabel)
                         Text(
                             "¥${totalLent.formatAmount()}",
                             fontSize = 20.sp,
@@ -150,11 +141,11 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                 }
                 Card(
                     modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
+                    colors = CardDefaults.cardColors(containerColor = BorrowCardBg),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("我欠别人", fontSize = 12.sp, color = Color(0xFF546E7A))
+                        Text("我欠别人", fontSize = 12.sp, color = BorrowCardLabel)
                         Text(
                             "¥${totalBorrowed.formatAmount()}",
                             fontSize = 20.sp,
@@ -235,7 +226,7 @@ private fun DebtItem(
         1f
     }
     val noteSuffix = if (debt.note.isNotBlank()) " · ${debt.note}" else ""
-    val dateText = debtDateFormat.format(Date(debt.occurredAt)) + noteSuffix
+    val dateText = formatTime(debt.occurredAt, "yyyy-MM-dd") + noteSuffix
 
     Card(shape = RoundedCornerShape(14.dp)) {
         Column(Modifier.padding(14.dp)) {
@@ -354,38 +345,18 @@ private fun AddDebtDialog(ledgers: List<Ledger>, forcedLedgerId: Long?, onDismis
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { amountText = sanitizeAmountInput(it) ?: return@OutlinedTextField },
                     label = { Text("金额") },
                     singleLine = true
                 )
                 Spacer(Modifier.height(8.dp))
-                // 账本选择行
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("记账账本", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        Row(
-                            Modifier.then(if (forcedLedgerId == null) Modifier.clickable { ledMenu = true } else Modifier),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                ledgers.firstOrNull { it.id == selLedgerId }?.let { "${it.icon} ${it.name}" } ?: "未选择",
-                                fontSize = 14.sp, fontWeight = FontWeight.Medium
-                            )
-                            if (forcedLedgerId == null) {
-                                Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        DropdownMenu(expanded = ledMenu, onDismissRequest = { ledMenu = false }) {
-                            ledgers.forEach { led ->
-                                DropdownMenuItem(
-                                    text = { Text("${led.icon} ${led.name}") },
-                                    onClick = { ledMenu = false; selLedgerId = led.id }
-                                )
-                            }
-                        }
-                    }
-                }
+                // 账本选择行（复用 TxLedgerRow，forcedLedgerId 非空时锁定不可切换）
+                TxLedgerRow(
+                    ledgers = ledgers,
+                    selectedLedgerId = selLedgerId,
+                    onSelect = { selLedgerId = it },
+                    locked = forcedLedgerId != null
+                )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = note,
@@ -465,7 +436,7 @@ private fun RepayDebtDialog(
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                    onValueChange = { amountText = sanitizeAmountInput(it) ?: return@OutlinedTextField },
                     label = { Text("本次金额") },
                     singleLine = true
                 )

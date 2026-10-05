@@ -19,7 +19,7 @@ import com.bookkeeping.app.data.entity.Transaction
 
 @Database(
     entities = [Transaction::class, ParseRule::class, Account::class, Ledger::class, RecurringItem::class, MerchantRule::class, DebtRecord::class, Receivable::class, InstallmentPlan::class, Budget::class],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -179,6 +179,49 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12 → v13：索引重设计。
+         *
+         * transactions 原先 8 个单列索引（occurredAt/category/source/accountId/ledgerId/
+         * type/confirmed/deletedAt），每次 insert 维护 8 棵 B-tree，而最高频的
+         * `WHERE confirmed=1 AND deletedAt=0 ORDER BY occurredAt` 只能吃到其中一个索引，
+         * 第二个条件退化为逐行过滤。改为按真实查询模式建复合索引，并补上一直缺失的
+         * reimburseStatus（报销页每次打开都全表扫描）。
+         * debts / receivables 同样补上按 ledgerId / direction 的索引。
+         */
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 删旧单列索引
+                listOf(
+                    "index_transactions_occurredAt", "index_transactions_category",
+                    "index_transactions_source", "index_transactions_accountId",
+                    "index_transactions_ledgerId", "index_transactions_type",
+                    "index_transactions_confirmed", "index_transactions_deletedAt"
+                ).forEach { db.execSQL("DROP INDEX IF EXISTS $it") }
+
+                // 复合索引：前导列与最常用的过滤条件一致，ORDER BY 也能直接吃到
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_confirmed_deletedAt_occurredAt " +
+                        "ON transactions(confirmed, deletedAt, occurredAt)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_confirmed_deletedAt_occurredAt_ledgerId " +
+                        "ON transactions(confirmed, deletedAt, occurredAt, ledgerId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_deletedAt_occurredAt " +
+                        "ON transactions(deletedAt, occurredAt)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_reimburseStatus " +
+                        "ON transactions(reimburseStatus)"
+                )
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_debts_ledgerId ON debts(ledgerId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_debts_direction ON debts(direction)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -186,18 +229,13 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "bookkeeping.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
-                    // 兜底迁移：理论上永远不会走到，因为已配齐 v4→v12 所有 Migration。
-                    // 真走到这里说明某次发布忘了写 Migration，用户数据会被清空——通过回调留下最显眼的日志。
-                    .fallbackToDestructiveMigration()
-                    .addCallback(object : RoomDatabase.Callback() {
-                        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
-                            android.util.Log.wtf(
-                                com.bookkeeping.app.BookkeepingApp.TAG,
-                                "!!! 破坏性迁移触发：某次升级漏写 Migration，用户数据已被清空（version=${db.version}）!!!"
-                            )
-                        }
-                    })
+                    .addMigrations(
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+                        MIGRATION_12_13
+                    )
+                    // 刻意【不】设 fallbackToDestructiveMigration：漏写 Migration 时让 Room 直接抛异常，
+                    // 好过静默删库——账本数据是用户的，崩溃可发现、清空不可挽回。
                     .build()
                     .also { INSTANCE = it }
             }

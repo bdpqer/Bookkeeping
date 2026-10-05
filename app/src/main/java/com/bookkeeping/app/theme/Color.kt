@@ -65,3 +65,48 @@ val WidgetAccent = Color(0xFF4C7DD9)
 
 /** 小部件分隔线色（半透明白，叠加在壁纸上） */
 val WidgetDivider = Color(0x1FFFFFFF)
+
+// ---------- 语义补色（原先散落在业务文件里的裸 Color(0x…)） ----------
+
+/** 渐变横幅（本月结余卡）：蓝 → 青 → 金 */
+val BannerGradient = listOf(Color(0xFF4A90D9), Color(0xFF7EC8E3), Color(0xFFE8C468))
+
+/** 预算卡圆形底：支出的 10% 淡红 */
+val ExpenseRedSoft = Color(0x1AE53935)
+
+/** 逾期/标记淡红底：支出的 13% */
+val ExpenseRedFaint = Color(0x22E53935)
+
+/** 分类图表配色（Tableau 10 色系），循环取用 */
+val ChartPalette = listOf(
+    Color(0xFF4E79A7), Color(0xFFF28E2B), Color(0xFFE15759), Color(0xFF76B7B2),
+    Color(0xFF59A14F), Color(0xFFEDC948), Color(0xFFB07AA1), Color(0xFFFF9DA7),
+    Color(0xFF9C755F), Color(0xFFBAB0AC)
+)
+
+/** 弹窗遮罩：50% 黑 */
+val ScrimBlack = Color(0x80000000)
+
+/** 短信来源标签色（与通知蓝 [TransferBlue] 区分） */
+val SmsPurple = Color(0xFF8E24AA)
+
+/** 借出卡标题色：暖棕 */
+val LentCardLabel = Color(0xFF8D6E63)
+
+/** 借入卡背景：淡蓝 */
+val BorrowCardBg = Color(0xFFE3F2FD)
+
+/** 借入卡标题色：蓝灰 */
+val BorrowCardLabel = Color(0xFF546E7A)
+
+/** 语音浮层提示文字（深底上的浅灰蓝） */
+val VoiceHint = Color(0xFFB9C6DC)
+
+/** 语音识别成功金额色（深底上的亮绿） */
+val VoiceSuccess = Color(0xFF7EE38B)
+
+/** 语音识别告警色（深底上的亮黄） */
+val VoiceWarning = Color(0xFFFFC857)
+
+/** 悬浮记账按钮底色：淡蓝 */
+val FabBg = Color(0xFFDCEBFF)

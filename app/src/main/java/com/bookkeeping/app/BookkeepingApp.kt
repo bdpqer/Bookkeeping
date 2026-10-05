@@ -4,7 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.provider.Telephony
 import android.util.Log
 import com.bookkeeping.app.data.AppDatabase
@@ -157,22 +157,35 @@ class BookkeepingApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        // minSdk=26（Android 8.0）起 NotificationChannel 为必需，无版本分支
-        val channel = NotificationChannel(
-            CHANNEL_ID_CAPTURE,
-            getString(R.string.capture_notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.capture_notification_text)
-            setShowBadge(false)
-        }
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(channel)
-        Log.d(TAG, "Notification channel created")
+        // minSdk=26（Android 8.0）起 NotificationChannel 为必需，无版本分支。
+        // 所有渠道都在这里建一次：重复调用是幂等的，但没必要在每次发通知时都建。
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID_CAPTURE,
+                getString(R.string.capture_notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = getString(R.string.capture_notification_text)
+                setShowBadge(false)
+            }
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                RecurringWorker.CHANNEL_ID_RECURRING, "账单提醒", NotificationManager.IMPORTANCE_DEFAULT
+            )
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID_BUDGET_ALERT, "预算超支提醒", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        Log.d(TAG, "Notification channels created")
     }
 
     private fun registerSmsContentObserver() {
-        smsContentObserver = SmsContentObserver(Handler(Looper.getMainLooper()))
+        // ⚠️ 必须用后台线程的 Handler：SmsContentObserver.onChange 里要查 content://sms（磁盘读），
+        // 传主 Looper 会触发 StrictMode 磁盘读违规，ANR 风险。
+        val thread = HandlerThread("sms-observer").apply { start() }
+        smsContentObserver = SmsContentObserver(Handler(thread.looper))
         contentResolver.registerContentObserver(
             Telephony.Sms.Inbox.CONTENT_URI,
             true,  // notifyForDescendants=true，子 URI 变化也触发
@@ -203,6 +216,7 @@ class BookkeepingApp : Application() {
             private set
 
         const val CHANNEL_ID_CAPTURE = "capture_service"
+        const val CHANNEL_ID_BUDGET_ALERT = "budget_alert"
         const val TAG = "Bookkeeping"
     }
 }

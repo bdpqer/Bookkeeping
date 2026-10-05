@@ -25,11 +25,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bookkeeping.app.theme.ScrimBlack
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.ParseRule
 import kotlinx.coroutines.launch
@@ -60,7 +60,7 @@ internal fun RuleEditDialog(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0x80000000).copy(alpha = 0.5f),
+        color = ScrimBlack,
         onClick = onDismiss
     ) {
         Box(contentAlignment = Alignment.Center) {

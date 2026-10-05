@@ -7,16 +7,22 @@ import androidx.room.PrimaryKey
 
 /**
  * 交易记录。所有自动/手动记账都存在这里。
+ *
+ * 索引设计（v13 起）：原先是 8 个单列索引，每次 insert 要维护 8 棵 B-tree，
+ * 而最高频的查询 `WHERE confirmed = 1 AND deletedAt = 0 ORDER BY occurredAt`
+ * 只能吃到其中一个，第二个条件退化为过滤。改为按实际查询模式建复合索引：
+ *  - [ACTIVE_TIME]：覆盖「已确认 + 未删除 + 按时间排序」，可同时用于过滤与排序，无需临时排序
+ *  - [PENDING_TIME]：待确认队列
+ *  - [DELETED_TIME]：回收站
+ *  - [LEDGER_TIME]：按账本筛选
+ *  - [REIMBURSE]：[reimburseStatus] 过滤（报销页高频，原先无索引导致全表扫描）
+ * 删掉了从未单独用于过滤的 category / source / accountId 索引（source 索引完全无查询使用）。
  */
 @Entity(tableName = "transactions", indices = [
-    Index(value = ["occurredAt"]),
-    Index(value = ["category"]),
-    Index(value = ["source"]),
-    Index(value = ["accountId"]),
-    Index(value = ["ledgerId"]),
-    Index(value = ["type"]),
-    Index(value = ["confirmed"]),
-    Index(value = ["deletedAt"]),
+    Index(value = ["confirmed", "deletedAt", "occurredAt"]),
+    Index(value = ["confirmed", "deletedAt", "occurredAt", "ledgerId"]),
+    Index(value = ["deletedAt", "occurredAt"]),
+    Index(value = ["reimburseStatus"]),
 ])
 data class Transaction(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

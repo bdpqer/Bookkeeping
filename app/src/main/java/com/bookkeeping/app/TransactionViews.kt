@@ -1,17 +1,9 @@
 package com.bookkeeping.app
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -20,10 +12,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,14 +22,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import java.util.Calendar
 import com.bookkeeping.app.theme.TransferOrange
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** 金额汇总防浮点尾差：如 0.1+0.2=0.30000000000000004 → 0.3 */
 internal fun Double.round2(): Double = Math.round(this * 100) / 100.0
@@ -150,15 +150,24 @@ internal fun categoryEmoji(category: String): String = when {
     else -> "📝"
 }
 
+/**
+ * 支出分类清单——全项目唯一来源。
+ * 记账弹窗、周期任务、分期编辑器都从这里取，避免各文件各写一份、内容却悄悄不一致
+ * （历史上 PeriodTaskEditor 就曾手写过一份，导致用户能选到不在主表里的分类）。
+ */
+internal val expenseCategories = listOf(
+    "购物", "餐饮", "居住", "交通", "娱乐", "医疗", "人情", "红包", "借出", "还账", "理财", "其他"
+)
+
+/** 收入分类清单——全项目唯一来源 */
+internal val incomeCategories = listOf(
+    "工资", "报销", "人情", "红包", "还款", "借入", "理财", "其他"
+)
+
 /** 按交易类型给出可选分类列表 */
 internal fun categoriesFor(type: Transaction.Type): List<String> = when (type) {
-    Transaction.Type.EXPENSE -> listOf(
-        "购物", "餐饮", "居住","交通", 
-        "娱乐", "医疗", "人情", "红包", "借出", "还账", "理财", "其他"
-    )
-    Transaction.Type.INCOME -> listOf(
-        "工资", "报销", "人情","红包",  "还款", "借入", "理财", "其他"
-    )
+    Transaction.Type.EXPENSE -> expenseCategories
+    Transaction.Type.INCOME -> incomeCategories
     Transaction.Type.TRANSFER -> listOf("转账")
 }
 
@@ -171,15 +180,22 @@ private fun formatTxTime(ts: Long): String {
 
 // ─── 顶栏账本下拉标题 ─────────────────────────────────────────
 
-/** 列表空状态占位：emoji + 提示文案（可带副文案），默认撑满父容器并居中 */
+/**
+ * 列表空状态占位：emoji + 提示文案（可带副文案）。
+ *
+ * 默认 [fillParent] = true 时撑满父容器并居中（用于整页空态）；
+ * 嵌在卡片里时传 false，只按内容高度居中。
+ */
 @Composable
 internal fun EmptyState(
     emoji: String,
     message: String,
     modifier: Modifier = Modifier,
-    subMessage: String? = null
+    subMessage: String? = null,
+    fillParent: Boolean = true
 ) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val box = if (fillParent) modifier.fillMaxSize() else modifier
+    Box(box, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(emoji, fontSize = 48.sp)
             Spacer(Modifier.height(12.dp))

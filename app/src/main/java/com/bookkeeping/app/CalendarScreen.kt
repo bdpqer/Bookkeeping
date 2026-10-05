@@ -30,7 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +76,7 @@ internal fun CalendarScreen() {
     var selectedDayKey by remember { mutableStateOf<Long?>(null) }
     // 当月交易明细（已确认未删除）。Flow 订阅：新增/确认/删除自动刷新。
     // 将来接入账本筛选时，改为 remember(ledgerId) { dao.observeByLedger(ledgerId) } 即可。
-    val monthTxs by remember { db.transactionDao().observeAll() }.collectAsState(initial = emptyList())
+    val monthTxs by remember { db.transactionDao().observeAll() }.collectAsStateWithLifecycle(initialValue = emptyList())
     // 当月按天汇总：依赖 monthTxs + viewYearMonth，remember 避免每次重组重算
     val daySums = remember(monthTxs, viewYearMonth) {
         val y = viewYearMonth.get(Calendar.YEAR)
@@ -145,14 +145,15 @@ internal fun CalendarScreen() {
         // 月历网格
         val daysInMonth = viewYearMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
         val firstDayOfWeek = (viewYearMonth.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY) // 0..6
-        val totalCells = firstDayOfWeek + daysInMonth
-        val gridCells = (0 until totalCells).map { idx ->
-            val dayNum = if (idx < firstDayOfWeek) null else idx - firstDayOfWeek + 1
-            dayNum
+        // 网格只随月份变化，缓存住避免每次重组重建 31+ 个元素的可变列表
+        val gridCells = remember(viewYearMonth) {
+            val totalCells = firstDayOfWeek + daysInMonth
+            (0 until totalCells).map { idx ->
+                if (idx < firstDayOfWeek) null else idx - firstDayOfWeek + 1
+            }
         }
 
-        val today = Calendar.getInstance()
-        val todayKey = localDayKeyOf(today.timeInMillis)
+        val todayKey = remember { localDayKeyOf(Calendar.getInstance().timeInMillis) }
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
@@ -160,7 +161,7 @@ internal fun CalendarScreen() {
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            items(gridCells) { dayNum ->
+            items(gridCells, key = { it ?: Long.MIN_VALUE }) { dayNum ->
                 if (dayNum == null) {
                     Box(Modifier.aspectRatio(1f))
                 } else {
@@ -279,7 +280,7 @@ internal fun CalendarScreen() {
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        items(dayTransactions) { tx ->
+                        items(dayTransactions, key = { it.id }) { tx ->
                             TransactionItem(tx = tx)
                         }
                     }

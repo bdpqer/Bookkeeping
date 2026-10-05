@@ -38,9 +38,6 @@ interface DebtDao {
     @Query("SELECT COALESCE(SUM(amount - repaid), 0) FROM debts WHERE direction = 'BORROWED' AND (amount - repaid) > 0.005 AND ledgerId = :ledgerId")
     suspend fun totalBorrowedByLedger(ledgerId: Long): Double
 
-    @Query("SELECT COUNT(*) FROM debts")
-    suspend fun count(): Int
-
     @Query("DELETE FROM debts WHERE id = :id")
     suspend fun delete(id: Long)
 }

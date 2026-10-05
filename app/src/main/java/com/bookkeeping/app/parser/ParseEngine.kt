@@ -1,11 +1,16 @@
 package com.bookkeeping.app.parser
 
+import android.util.Log
+import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.data.entity.ParseRule
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.digitOf
 import com.bookkeeping.app.parseChineseNumber
 import com.bookkeeping.app.round2
+
+/** 日志标签，与其他模块统一用 BookkeepingApp.TAG */
+private const val TAG = BookkeepingApp.TAG
 
 /**
  * 解析引擎：把短信/通知的原始文本 → Transaction。
@@ -30,6 +35,9 @@ class ParseEngine(
         return try {
             parseInternal(text, sourcePackage, sourceSender, sourceChannel, occurredAt)
         } catch (e: Exception) {
+            // 兜底保持不变（绝不让通知服务崩溃），但必须留痕：
+            // 原先连异常对象都丢掉，用户配了非法正则只会看到"解析失败"，无从排查
+            Log.w(TAG, "解析失败（可能是用户配置的正则非法）", e)
             null
         }
     }
@@ -204,7 +212,12 @@ class ParseEngine(
         /** 安全编译正则：非法 pattern 返回 null 而不是抛异常 */
         private fun safeRegex(pattern: String?): Regex? =
             if (pattern.isNullOrBlank()) null
-            else try { Regex(pattern) } catch (e: Exception) { null }
+            else try {
+                Regex(pattern)
+            } catch (e: Exception) {
+                Log.w(TAG, "跳过非法正则：$pattern", e)
+                null
+            }
 
         /** 锚定金额模式：货币符号/「元」紧跟数字，优先级最高（预编译，避免每条通知重复编译正则） */
         private val ANCHORED_AMOUNT_REGEXES: List<Regex> = listOf(

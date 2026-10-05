@@ -19,14 +19,8 @@ interface ReceivableDao {
     @Query("DELETE FROM receivables WHERE id = :id")
     suspend fun delete(id: Long)
 
-    @Query("SELECT * FROM receivables ORDER BY dueDate ASC")
-    suspend fun getAll(): List<Receivable>
-
     @Query("SELECT * FROM receivables WHERE direction = :direction ORDER BY dueDate ASC")
     suspend fun getByDirection(direction: String): List<Receivable>
-
-    @Query("SELECT * FROM receivables WHERE id = :id")
-    suspend fun getById(id: Long): Receivable?
 
     @Query("UPDATE receivables SET status = 'DONE' WHERE id = :id")
     suspend fun markDone(id: Long)

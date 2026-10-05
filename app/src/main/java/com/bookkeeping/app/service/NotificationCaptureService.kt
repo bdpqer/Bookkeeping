@@ -10,17 +10,18 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.glance.appwidget.updateAll
 import com.bookkeeping.app.BookkeepingApp
 import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.MainActivity
 import com.bookkeeping.app.R
-import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.data.AppDatabase
-import com.bookkeeping.app.parser.ParseEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import androidx.glance.appwidget.updateAll
+import com.bookkeeping.app.formatAmount
 
 /**
  * 核心服务：监听所有支付相关 App 的通知。
@@ -31,27 +32,33 @@ import kotlinx.coroutines.launch
 class NotificationCaptureService : NotificationListenerService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.IO)
+    // 裸 scope 无 Job 持有者且未在 onDestroy 取消：Service 销毁后协程仍在跑并持有已销毁的 Service。
+    // 用 SupervisorJob 并在 onDestroy 取消。
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val db by lazy { AppDatabase.getInstance(this) }
 
     /** 通知侧内存去重：key=来源包|原文，3 分钟内同 key 视为同一通知重投，跳过入库 */
     private val lastInsertedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    @Volatile private var cachedParseEngine: ParseEngine = ParseEngine()
-    private var isForegroundStarted = false
+
+    /**
+     * 自动记账总开关缓存。原先每次 onNotificationPosted（主线程）都读 SharedPreferences，
+     * 首次访问要读磁盘 XML；用户改开关时由 [refreshRules] 一并刷新。
+     */
+    @Volatile private var autoCaptureEnabled = true
 
     /** 从 DB 刷新规则缓存（用户改规则后调） */
     fun refreshRules() {
         scope.launch {
-            val rules = db.parseRuleDao().getEnabled()
-            val merchantRules = db.merchantRuleDao().getEnabled()
-            cachedParseEngine = ParseEngine(rules, merchantRules)
-            fileLog("🔄 规则已刷新，ParseRule=${rules.size} MerchantRule=${merchantRules.size}")
+            RuleEngineCache.refresh(this@NotificationCaptureService)
+            autoCaptureEnabled = readAutoCaptureEnabled()
+            fileLog("🔄 规则与开关状态已刷新，自动记账=${if (autoCaptureEnabled) "开" else "关"}")
         }
     }
 
     override fun onCreate() {
         super.onCreate()
         fileLog("🔧 NotificationCaptureService.onCreate()")
+        autoCaptureEnabled = readAutoCaptureEnabled()
         // 注册进程内规则刷新钩子：Service 声明了 android:permission（系统签名权限），
         // 同进程 startService 会 SecurityException，外部组件须经此钩子触发热刷新
         NotificationCaptureService.rulesRefresher = { refreshRules() }
@@ -60,23 +67,38 @@ class NotificationCaptureService : NotificationListenerService() {
         // Android 8+ 要求 startForegroundService 在 5s 内调 startForeground
         startForegroundSafe()
         // Android 16 上没有 requestBind，只有 requestRebind(ComponentName)
+        requestRebind()
+    }
+
+    /**
+     * 通过反射调 `NotificationListenerService.requestRebind(ComponentName)`。
+     * 该方法是 API 27 才加入的，minSdk=26 直接调用会 NoSuchMethodError，故用反射兜底。
+     * onCreate 与 onListenerDisconnected 两处共用同一实现。
+     */
+    private fun requestRebind() {
         try {
             val cls = NotificationListenerService::class.java
-            val allMethods = cls.declaredMethods + cls.methods
-            // 找 requestRebind 方法（单参数 ComponentName）
-            val rebindMethod = allMethods.firstOrNull {
+            val rebindMethod = (cls.declaredMethods + cls.methods).firstOrNull {
                 it.name == "requestRebind" && it.parameterCount == 1
             }
             if (rebindMethod != null) {
                 rebindMethod.isAccessible = true
-                val r = rebindMethod.invoke(this, ComponentName(this, this.javaClass.name))
+                val r = rebindMethod.invoke(this, ComponentName(this, this.javaClass))
                 fileLog("🔁 requestRebind result: $r")
             } else {
-                fileLog("❌ requestRebind also not found!")
+                fileLog("❌ requestRebind not available on this API level")
             }
         } catch (e: Throwable) {
             fileLog("❌ requestRebind err: ${e.message}")
         }
+    }
+
+    private fun readAutoCaptureEnabled(): Boolean =
+        getSharedPreferences("settings", MODE_PRIVATE).getBoolean("auto_capture_enabled", true)
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     override fun onListenerConnected() {
@@ -97,29 +119,7 @@ class NotificationCaptureService : NotificationListenerService() {
         super.onListenerDisconnected()
         fileLog("⚠️ onListenerDisconnected, scheduling rebind...")
         Log.w(BookkeepingApp.TAG, "⚠️ NotificationListenerService disconnected")
-        // requestRebind(ComponentName) 是 API 27 才加入的；
-        // minSdk=26（Android 8.0/8.1）直接调用会 NoSuchMethodError。
-        // 用反射兜底，与 onCreate() 中的逻辑保持一致。
-        handler.postDelayed({
-            try {
-                val cls = NotificationListenerService::class.java
-                val rebindMethod = (cls.declaredMethods + cls.methods).firstOrNull {
-                    it.name == "requestRebind" && it.parameterCount == 1
-                }
-                if (rebindMethod != null) {
-                    rebindMethod.isAccessible = true
-                    rebindMethod.invoke(
-                        this,
-                        ComponentName(this, NotificationCaptureService::class.java)
-                    )
-                    fileLog("🔁 requestRebind called (via reflection)")
-                } else {
-                    fileLog("❌ requestRebind not available on this API level")
-                }
-            } catch (e: Throwable) {
-                fileLog("❌ requestRebind failed: ${e.message}")
-            }
-        }, 2000)
+        handler.postDelayed({ requestRebind() }, 2000)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -132,7 +132,7 @@ class NotificationCaptureService : NotificationListenerService() {
         if (pkg == packageName) return
 
         // 自动记账总开关：关闭时直接忽略通知（不解析不入库）
-        if (!getSharedPreferences("settings", MODE_PRIVATE).getBoolean("auto_capture_enabled", true)) return
+        if (!autoCaptureEnabled) return
 
         val extras = sbn.notification.extras
 
@@ -166,8 +166,8 @@ class NotificationCaptureService : NotificationListenerService() {
         scope.launch {
             // 通知侧内存去重：同一通知常被系统重投/多实例下发（不同 postTime），
             // 解析出的 merchant 可能不一致导致 SQL 去重漏放，
-            // 这里按「来源包 + 原文」再拦一道（3 分钟窗口）。
-            val dupKey = "$pkg|${rawText.take(100)}"
+            // 这里按「来源包 + 全文」再拦一道（3 分钟窗口）。
+            val dupKey = "$pkg|$rawText"
             val now = System.currentTimeMillis()
             val lastTs = lastInsertedAt[dupKey]
             if (lastTs != null && now - lastTs < 3 * 60 * 1000L) {
@@ -177,7 +177,7 @@ class NotificationCaptureService : NotificationListenerService() {
             val id = CaptureIngestor.ingest(
                 context = this@NotificationCaptureService,
                 db = db,
-                engine = cachedParseEngine,
+                engine = RuleEngineCache.get(this@NotificationCaptureService),
                 rawText = rawText,
                 channel = pkgToChannel(pkg),
                 occurredAt = sbn.postTime,
@@ -196,7 +196,9 @@ class NotificationCaptureService : NotificationListenerService() {
             }
             if (id != null) {
                 lastInsertedAt[dupKey] = now
-                // 容量保护：清掉 3 分钟窗口外的记录，避免进程长期运行时 Map 无限增长
+                // 容量保护：清掉 3 分钟窗口外的记录。
+                // 原来只在「清理后仍 > 200」时才做，3 分钟内涌入超过 200 条时上限形同虚设，
+                // 改为每次插入后都检查一次。
                 if (lastInsertedAt.size > 200) {
                     val it = lastInsertedAt.entries.iterator()
                     while (it.hasNext()) {
@@ -219,14 +221,9 @@ class NotificationCaptureService : NotificationListenerService() {
         CaptureLogBus.add(entry)
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        super.onNotificationRemoved(sbn)
-    }
-
     // ─── 前台服务 ──────────────────────────────────────────────
 
     private fun startForegroundSafe() {
-        if (isForegroundStarted) return
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -245,10 +242,12 @@ class NotificationCaptureService : NotificationListenerService() {
 
         try {
             startForeground(FOREGROUND_ID, notification)
-            isForegroundStarted = true
             fileLog("🔄 startForeground ok")
         } catch (e: Exception) {
-            fileLog("❌ startForeground failed: ${e.message}")
+            // 失败后 Service 不是前台服务，Android 8+ 会在几分钟内被系统回收，
+            // 且通知监听会静默失效——不如直接停掉，让用户看到服务已断开。
+            fileLog("❌ startForeground failed, stopSelf: ${e.message}")
+            stopSelf()
         }
     }
 
