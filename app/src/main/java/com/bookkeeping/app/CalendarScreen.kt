@@ -18,7 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -161,7 +161,12 @@ internal fun CalendarScreen() {
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            items(gridCells, key = { it ?: Long.MIN_VALUE }) { dayNum ->
+            itemsIndexed(
+                gridCells,
+                // 月初补齐的空白占位有多格，不能共用同一个 key，
+                // 否则 LazyGrid 抛 "Key ... was already used"（月份 1 号不是周日时必崩）
+                key = { idx, day -> if (day == null) Long.MIN_VALUE + idx else day.toLong() }
+            ) { _, dayNum ->
                 if (dayNum == null) {
                     Box(Modifier.aspectRatio(1f))
                 } else {
