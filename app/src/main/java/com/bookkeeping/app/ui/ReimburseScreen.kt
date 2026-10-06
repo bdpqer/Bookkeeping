@@ -29,15 +29,14 @@ import com.bookkeeping.app.data.entity.Transaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.util.*
 import com.bookkeeping.app.formatAmount
+import com.bookkeeping.app.formatTime
 import com.bookkeeping.app.theme.LentOrange
 import com.bookkeeping.app.theme.SuccessGreen
 import com.bookkeeping.app.theme.TransferOrange
 
-private val reimburseDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-private val monthFormat = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+
 
 /** 报销管理页 —— 待报销 / 已报销 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +64,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                 db.transactionDao().getReimburseByStatus("DONE")
                     .filter { selLedgerId == 0L || it.ledgerId == selLedgerId }
             }
-            val allMonths = (pendingList + doneList).map { monthFormat.format(Date(it.occurredAt)) }.distinct()
+            val allMonths = (pendingList + doneList).map { formatTime(it.occurredAt, "yyyy-MM") }.distinct()
             if (expandedMonths.isEmpty() && allMonths.isNotEmpty()) {
                 expandedMonths = setOf(allMonths.first())
             }
@@ -80,7 +79,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
     // 一起选上会让用户在不知情的情况下批量报销屏幕上看不到的数据。
     // 已报销 tab（tab=1）没有勾选框，可见集合为空，全选自然不可用
     val visibleIds = if (tab == 0) {
-        pendingList.filter { monthFormat.format(Date(it.occurredAt)) in expandedMonths }
+        pendingList.filter { formatTime(it.occurredAt, "yyyy-MM") in expandedMonths }
             .map { it.id }.toSet()
     } else emptySet()
     val isAllSelected = visibleIds.isNotEmpty() && visibleIds.all { it in selectedIds }
@@ -141,7 +140,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                     else "暂无已报销记录\n点右上角环形加号「新增」"
                 )
             } else {
-                val grouped = currentList.groupBy { monthFormat.format(Date(it.occurredAt)) }
+                val grouped = remember(currentList) { currentList.groupBy { formatTime(it.occurredAt, "yyyy-MM") } }
                     .toSortedMap(compareByDescending<String> { it })
 
                 LazyColumn(
@@ -379,7 +378,7 @@ private fun ReimburseItemRow(
     }
 
     val emoji = categoryEmoji(tx.category)
-    val dateStr = reimburseDateFormat.format(Date(tx.occurredAt))
+    val dateStr = formatTime(tx.occurredAt, "yyyy-MM-dd HH:mm")
     val amountColor = if (isPending) TransferOrange else SuccessGreen
     val accountSuffix = accountName?.let { " · $it" } ?: ""
 

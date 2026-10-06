@@ -73,7 +73,7 @@ internal fun TransactionItem(
         Transaction.Type.TRANSFER -> "→"
     }
     val emoji = categoryEmoji(tx.category)
-    val hasReceipt = com.bookkeeping.app.ui.ReceiptStore.hasReceipt(context, tx.id)
+    val hasReceipt = remember(tx.id) { com.bookkeeping.app.ui.ReceiptStore.hasReceipt(context, tx.id) }
 
     if (inCard) {
         TransactionRow(

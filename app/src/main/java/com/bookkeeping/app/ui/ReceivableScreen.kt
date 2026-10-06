@@ -105,15 +105,13 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
             val (pendingList, doneList) = remember(list) {
                 list.partition { it.status == Receivable.Status.PENDING }
             }
-            // 今日零点只算一次，避免每行都新建 Calendar
-            val todayStart = remember {
-                Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.timeInMillis
-            }
+            // 今日零点每次重组重算（计算极便宜，跨零点后逾期判定才准确）
+            val todayStart = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
 
             if (list.isEmpty()) {
                 EmptyState(

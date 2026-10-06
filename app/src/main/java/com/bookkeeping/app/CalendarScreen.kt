@@ -157,7 +157,8 @@ internal fun CalendarScreen() {
             }
         }
 
-        val todayKey = remember { localDayKeyOf(Calendar.getInstance().timeInMillis) }
+        // 每次重组重算（计算极便宜），跨零点后"今天"高亮才准确
+        val todayKey = localDayKeyOf(Calendar.getInstance().timeInMillis)
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),

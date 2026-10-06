@@ -695,11 +695,10 @@ private fun HomeBudgetCard(monthExpense: Double, budget: Double) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${monthExpense.formatAmount()} / ${budget.formatAmount()}",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val remainingDays = remember {
-                        val cal = Calendar.getInstance()
-                        val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-                        (daysInMonth - cal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
-                    }
+                    // 每次重组重算（跨月后预算日均才准确）
+                    val nowCal = Calendar.getInstance()
+                    val remainingDays =
+                        (nowCal.getActualMaximum(Calendar.DAY_OF_MONTH) - nowCal.get(Calendar.DAY_OF_MONTH)).coerceAtLeast(1)
                     Text("剩余日均 ${((budget - monthExpense).coerceAtLeast(0.0) / remainingDays).formatAmount()}",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -51,6 +51,7 @@ import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.bookkeeping.app.theme.BrandBlue
@@ -190,6 +191,12 @@ internal fun TransactionListScreen() {
     val db = remember { AppDatabase.getInstance(context) }
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
     var keyword by remember { mutableStateOf("") }
+    // 输入防抖：快速输入时合并末次，避免每敲一字就重建 Flow 查 Room
+    var debouncedKeyword by remember { mutableStateOf(keyword) }
+    LaunchedEffect(keyword) {
+        delay(300)
+        debouncedKeyword = keyword
+    }
     var ledgers by remember { mutableStateOf<List<Ledger>>(emptyList()) }
     var selectedLedgerId by remember { mutableStateOf<Long?>(null) }
     // 时间筛选：null = 全部时间；默认显示当月
@@ -206,8 +213,8 @@ internal fun TransactionListScreen() {
     }
 
     // 交易数据改为 Flow 订阅：数据库变化自动刷新（入库/编辑/删除均无需手动 refresh）
-    val baseList by remember(selectedLedgerId, keyword) {
-        val kw = keyword.trim()
+    val baseList by remember(selectedLedgerId, debouncedKeyword) {
+        val kw = debouncedKeyword.trim()
         when {
             selectedLedgerId != null && kw.isNotBlank() ->
                 db.transactionDao().observeSearchByLedger(selectedLedgerId!!, kw)

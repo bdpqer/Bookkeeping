@@ -16,9 +16,13 @@ import com.bookkeeping.app.parser.ParseEngine
 import com.bookkeeping.app.receiver.SmsContentObserver
 import com.bookkeeping.app.worker.AutoBackupWorker
 import com.bookkeeping.app.worker.RecurringWorker
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.flow.debounce
+import com.bookkeeping.app.widget.BookkeepingWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
 
 class BookkeepingApp : Application() {
@@ -39,6 +43,21 @@ class BookkeepingApp : Application() {
         migrateLegacyBudgetPrefs()
         RecurringWorker.triggerNow(this)
         AutoBackupWorker.ensureScheduled(this)
+        startWidgetAutoRefresh()
+    }
+
+    /**
+     * 交易表任意写入（手动/编辑/删除/CSV/周期/报销）后，去抖刷新桌面小组件。
+     * debounce 属 FlowPreview，此处显式 @OptIn 接受。
+     */
+    @OptIn(FlowPreview::class)
+    private fun startWidgetAutoRefresh() {
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
+            AppDatabase.getInstance(this@BookkeepingApp)
+                .transactionDao().observeAll()
+                .debounce(800)
+                .collect { BookkeepingWidget().updateAll(this@BookkeepingApp) }
+        }
     }
 
     /**

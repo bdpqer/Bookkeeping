@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import com.bookkeeping.app.theme.DangerRed
 
@@ -100,15 +103,16 @@ object ReceiptStore {
     }
 }
 
-/** 本地文件缩略图 */
+/** 本地文件缩略图（解码放到 IO 线程，避免大图阻塞主线程/掉帧） */
 @Composable
 fun ReceiptImage(file: File, modifier: Modifier = Modifier, big: Boolean = false) {
-    val bitmap = remember(file.absolutePath, file.lastModified()) {
-        ReceiptStore.decodeSampled(file, if (big) 1024 else 256)
+    val bitmap by produceState<Bitmap?>(initialValue = null, file.absolutePath, file.lastModified()) {
+        value = withContext(Dispatchers.IO) { ReceiptStore.decodeSampled(file, if (big) 1024 else 256) }
     }
-    if (bitmap != null) {
+    val b = bitmap
+    if (b != null) {
         Image(
-            bitmap = bitmap.asImageBitmap(),
+            bitmap = b.asImageBitmap(),
             contentDescription = "交易凭证",
             modifier = modifier,
             contentScale = ContentScale.Crop
