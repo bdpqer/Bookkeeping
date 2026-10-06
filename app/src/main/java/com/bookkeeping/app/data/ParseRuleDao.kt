@@ -16,6 +16,14 @@ interface ParseRuleDao {
     @Query("SELECT * FROM parse_rules ORDER BY priority DESC")
     suspend fun getAll(): List<ParseRule>
 
+    /**
+     * 规则列表的实时订阅。
+     * 设置页早先用「一次性查询 + 手动 loadAll()」取快照，新建/编辑/删除规则后
+     * 只刷新了服务侧缓存，页面列表不更新，用户以为没保存成功。
+     */
+    @Query("SELECT * FROM parse_rules ORDER BY priority DESC")
+    fun observeAll(): kotlinx.coroutines.flow.Flow<List<ParseRule>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(rule: ParseRule): Long
 

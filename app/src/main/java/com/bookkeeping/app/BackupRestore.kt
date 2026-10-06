@@ -82,12 +82,15 @@ private class CsvCols(
             fun opt(name: String) = canon.indexOf(name).takeIf { it >= 0 } ?: -1
             return CsvCols(
                 id = opt("id"), type = type, amount = amount,
-                category = opt("category").coerceAtLeast(0),
-                merchant = opt("merchant").coerceAtLeast(0),
+                // 缺失列一律保留 -1：下面统一由 cell() 兜底成空串。
+                // 早先这里用 coerceAtLeast(0) 会把缺失列悄悄指向第 0 列，
+                // 于是「分类/商户/备注」读到的是 id 或日期列，产生静默脏数据
+                category = opt("category"),
+                merchant = opt("merchant"),
                 source = opt("source"), account = opt("account"),
-                note = opt("note").coerceAtLeast(0),
+                note = opt("note"),
                 isManual = opt("is_manual"),
-                confidence = opt("confidence").let { if (it < 0) 0 else it },
+                confidence = opt("confidence"),
                 occurredAt = occurred, rawText = opt("raw_text"),
                 minSize = maxOf(occurred, amount, type) + 1
             )
@@ -240,6 +243,9 @@ internal suspend fun importCsvFromUri(context: Context, uri: android.net.Uri): P
 
                 val f = parseCsvLine(line)
                 if (f.size < c.minSize) { skipped++; return@forEachLine }
+                // 安全取值：可选列可能缺失（index = -1），也可能遇到被截断的行。
+                // 中文导出格式没有 id 列，早先直接写 f[c.id] 就是 f[-1]，必崩
+                fun cell(idx: Int) = if (idx >= 0) f.getOrElse(idx) { "" } else ""
 
                 val amount = f[c.amount].trim().toDoubleOrNull()
                 if (amount == null) { skipped++; return@forEachLine }
@@ -253,7 +259,7 @@ internal suspend fun importCsvFromUri(context: Context, uri: android.net.Uri): P
                     }
                 }
                 val confidence = try {
-                    Transaction.Confidence.valueOf(f[c.confidence].trim().uppercase())
+                    Transaction.Confidence.valueOf(cell(c.confidence).trim().uppercase())
                 } catch (_: Exception) { Transaction.Confidence.HIGH }
                 // 时间解析失败时如实计入跳过，而不是静默改成「导入时刻」让用户困惑
                 val occurredAt = parseCsvTime(f[c.occurredAt])
@@ -261,18 +267,18 @@ internal suspend fun importCsvFromUri(context: Context, uri: android.net.Uri): P
 
                 pending.add(
                     Transaction(
-                        id = f[c.id].trim().toLongOrNull() ?: 0L,
+                        id = cell(c.id).trim().toLongOrNull() ?: 0L,
                         amount = amount,
                         type = type,
-                        category = f[c.category].trim(),
-                        merchant = f[c.merchant].trim(),
-                        source = f[c.source].trim(),
-                        accountId = f[c.account].trim().toLongOrNull(),
+                        category = cell(c.category).trim(),
+                        merchant = cell(c.merchant).trim(),
+                        source = cell(c.source).trim().ifEmpty { "CSV导入" },
+                        accountId = cell(c.account).trim().toLongOrNull(),
                         // CSV 不含账本列，补默认账本，避免导入后账本视图立即为空
                         ledgerId = defaultLedgerId,
-                        note = f[c.note].trim(),
-                        rawText = f.getOrElse(c.rawText) { "" },
-                        isManual = f.getOrElse(c.isManual) { "" }.trim() == "1",
+                        note = cell(c.note).trim(),
+                        rawText = cell(c.rawText),
+                        isManual = cell(c.isManual).trim() == "1",
                         // 低置信度记录回到待确认队列，而不是绕过确认直接入账
                         confirmed = confidence != Transaction.Confidence.LOW,
                         confidence = confidence,

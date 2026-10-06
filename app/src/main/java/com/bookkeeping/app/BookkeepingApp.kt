@@ -54,14 +54,22 @@ class BookkeepingApp : Application() {
 
             val db = AppDatabase.getInstance(this@BookkeepingApp)
             val target = db.ledgerDao().getDefault() ?: db.ledgerDao().getAll().firstOrNull()
-            if (target != null && db.budgetDao().getByLedger(target.id) == null) {
+            val migrated = if (target == null) {
+                // 默认账本还没就位（播种协程与这里并发跑），本次不迁移，保留旧键下次启动重试。
+                // 早先这里无论成败都清 old key，会让来不及迁移的旧预算永久丢失
+                Log.w(TAG, "⚠️ 旧预算迁移跳过：暂无可用账本，将在下次启动重试")
+                false
+            } else if (db.budgetDao().getByLedger(target.id) == null) {
                 db.budgetDao().insert(
                     Budget(ledgerId = target.id, monthlyAmount = oldAmount, notifiedMonth = oldMonth)
                 )
                 Log.d(TAG, "✅ 旧全局预算已迁移到账本「${target.name}」：¥$oldAmount")
+                true
+            } else {
+                true // 该账本已有预算行：旧值此前已迁移过，可以清键了
             }
             db.budgetDao().deleteOrphans()
-            prefs.edit().remove("monthly_budget").remove("budget_notified_month").apply()
+            if (migrated) prefs.edit().remove("monthly_budget").remove("budget_notified_month").apply()
         } catch (e: Exception) {
             Log.e(TAG, "migrateLegacyBudgetPrefs failed", e)
         }
@@ -191,6 +199,9 @@ class BookkeepingApp : Application() {
             true,  // notifyForDescendants=true，子 URI 变化也触发
             smsContentObserver
         )
+        // 关键：先把增量游标推到当前最大 _ID，否则首次 onChange 会把全部历史短信灌进来。
+        // post 到同一个 HandlerThread，与 onChange 串行 → 保证在首次回调之前执行完
+        Handler(thread.looper).post { smsContentObserver.primeToLatest() }
         writeDebug("✅ SmsContentObserver registered")
     }
 

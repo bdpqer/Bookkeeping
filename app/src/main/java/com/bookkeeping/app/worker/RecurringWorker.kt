@@ -1,4 +1,5 @@
 package com.bookkeeping.app.worker
+import com.bookkeeping.app.applyBalance
 
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -58,28 +59,39 @@ class RecurringWorker(
 
             for (item in due) {
                 try {
-                    when (item.mode) {
-                        RecurringItem.Mode.REMIND -> sendReminder(item)
-                        RecurringItem.Mode.AUTO_TX -> autoInsertTx(db, item)
-                    }
-                    // 已运行次数 +1，计算下一次运行时间，并按结束条件决定是否停用
-                    val newRunCount = item.runCount + 1
-                    val nextRun = computeNextRun(item, now)
-                    val shouldStop = when (item.endMode) {
-                        RecurringItem.EndMode.NEVER -> false
-                        RecurringItem.EndMode.AFTER_COUNT ->
-                            item.endAfterCount != null && newRunCount >= item.endAfterCount
-                        RecurringItem.EndMode.ON_DATE ->
-                            item.endDate != null && nextRun > item.endDate
-                    }
-                    db.recurringDao().update(
-                        item.copy(
-                            runCount = newRunCount,
-                            nextRunAt = nextRun,
-                            isEnabled = if (shouldStop) false else item.isEnabled
+                    // ⚠️ 「入账 + 推进 nextRunAt」必须在同一事务里。
+                    // 早先两者分离：insert 成功但 update 抛异常时落入 catch → failed=true →
+                    // Result.retry() 让 WorkManager 重跑整个 doWork，而该项仍在 getDue 里，
+                    // 于是同一笔被重复入账。加了事务后即使 retry，nextRunAt 已推进不会二次命中。
+                    var stopped = false
+                    db.withTransaction {
+                        when (item.mode) {
+                            RecurringItem.Mode.REMIND -> sendReminder(item)
+                            RecurringItem.Mode.AUTO_TX -> autoInsertTx(db, item)
+                        }
+                        // 已运行次数 +1，计算下一次运行时间，并按结束条件决定是否停用
+                        val newRunCount = item.runCount + 1
+                        // 以「本期计划时间」而非当前时间为基准推算下一期：
+                        // 用 now 的话，执行每延迟一次，计划日就永久漂移一次（10 号 → 18 号 → …）
+                        val base = if (item.nextRunAt > 0L) item.nextRunAt else now
+                        val nextRun = computeNextRun(item, base)
+                        val shouldStop = when (item.endMode) {
+                            RecurringItem.EndMode.NEVER -> false
+                            RecurringItem.EndMode.AFTER_COUNT ->
+                                item.endAfterCount != null && newRunCount >= item.endAfterCount
+                            RecurringItem.EndMode.ON_DATE ->
+                                item.endDate != null && nextRun > item.endDate
+                        }
+                        db.recurringDao().update(
+                            item.copy(
+                                runCount = newRunCount,
+                                nextRunAt = nextRun,
+                                isEnabled = if (shouldStop) false else item.isEnabled
+                            )
                         )
-                    )
-                    if (shouldStop) {
+                        stopped = shouldStop
+                    }
+                    if (stopped) {
                         Log.i(BookkeepingApp.TAG, "🏁 ${item.name} 达到结束条件，已停用")
                     }
                 } catch (e: Exception) {
@@ -88,7 +100,14 @@ class RecurringWorker(
                     failed = true
                     runCatching {
                         db.recurringDao().update(
-                            item.copy(runCount = item.runCount + 1, nextRunAt = computeNextRun(item, now))
+                            item.copy(
+                                runCount = item.runCount + 1,
+                                // 这里同样要以本期计划时间为基准，避免失败后计划日漂移
+                                nextRunAt = computeNextRun(
+                                    item,
+                                    if (item.nextRunAt > 0L) item.nextRunAt else now
+                                )
+                            )
                         )
                     }
                 }
@@ -163,10 +182,13 @@ class RecurringWorker(
                                 isManual = false,
                                 confirmed = true,
                                 confidence = Transaction.Confidence.HIGH,
-                                occurredAt = System.currentTimeMillis()
+                                // 记在本期到期日：久未打开 App 补跑时多期一次性入账，
+                                // 用当天时间会让 12 期全挤在今天，当月账单/预算口径全错
+                                occurredAt = dueAt
                             )
                             val savedTx = tx.withDefaultAssociation(db)
                             db.transactionDao().insert(savedTx)
+                            applyBalance(db, savedTx)
                             ledgerIds += savedTx.ledgerId
                             Log.i(BookkeepingApp.TAG,
                                 "💳 分期入账 plan=${updated.id} 第$periodNo/${updated.installments}期 ¥$amount")
@@ -276,10 +298,14 @@ class RecurringWorker(
             isManual = false,
             confirmed = true,
             confidence = Transaction.Confidence.HIGH,
-            occurredAt = System.currentTimeMillis()
+            // 用本期计划时间：worker 延迟执行（隔月才补跑）时，钱应该记在它本来该发生的那天，
+            // 而不是全部挤到执行当天，否则当月支出/预算/报表口径全错
+            occurredAt = if (item.nextRunAt > 0L && item.nextRunAt <= System.currentTimeMillis())
+                item.nextRunAt else System.currentTimeMillis()
         )
         val saved = tx.withDefaultAssociation(db)
         db.transactionDao().insert(saved)
+        applyBalance(db, saved)
         // 预算超支检查：按该笔实际归属账本（每账本每月最多提醒一次）
         checkBudgetAndNotify(applicationContext, ledgerId = saved.ledgerId)
         Log.i(BookkeepingApp.TAG, "✅ Auto-inserted recurring tx: ${item.name} amt=${item.amount}")

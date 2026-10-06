@@ -232,4 +232,24 @@ class SmsContentObserver(handler: Handler) : ContentObserver(handler) {
             Log.e(BookkeepingApp.TAG, "SmsContentObserver query failed", e)
         }
     }
+
+    /**
+     * 把增量游标推进到「当前收件箱最大 _ID」。
+     *
+     * 必须在注册之后调用：[lastHandledId] 初值是 0，直接用会让首次 onChange 的
+     * 条件 `_ID > 0` 命中**全部历史短信**，几十上百条旧银行短信会被灌进待确认队列。
+     * 这里只读取按 _ID DESC 的第一行（cursor 是窗口式读取，不会全表遍历）。
+     */
+    fun primeToLatest() {
+        val ctx = BookkeepingApp.instance
+        runCatching {
+            ctx.contentResolver.query(
+                Telephony.Sms.Inbox.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID),
+                null, null,
+                "${Telephony.Sms._ID} DESC"
+            )?.use { c -> if (c.moveToFirst()) lastHandledId = c.getLong(0) }
+        }.onFailure { Log.e(BookkeepingApp.TAG, "prime sms cursor failed", it) }
+        Log.i(BookkeepingApp.TAG, "📩 SmsContentObserver primed to _ID=$lastHandledId")
+    }
 }

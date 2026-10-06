@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
@@ -83,7 +84,10 @@ internal fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var entries by remember { mutableStateOf(CaptureLogBus.entries) }
     var listenerEnabled by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
-    var rules by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.ParseRule>>(emptyList()) }
+    // 规则改成 Flow 订阅：新建/编辑/删除后自动刷新
+    // （早先是一次性快照，保存后只刷新了服务侧缓存，页面列表不更新）
+    val rules by remember { AppDatabase.getInstance(context).parseRuleDao().observeAll() }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     var accounts by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.Account>>(emptyList()) }
     var ledgers by remember { mutableStateOf<List<com.bookkeeping.app.data.entity.Ledger>>(emptyList()) }
     var budgetMap by remember { mutableStateOf(mapOf<Long, Double>()) }
@@ -92,12 +96,16 @@ internal fun SettingsScreen(
     var hasPin by remember { mutableStateOf(com.bookkeeping.app.ui.hasPinSet(context)) }
     var showPinSetup by remember { mutableStateOf(false) }
     val canBiometric = remember { com.bookkeeping.app.ui.canAuthenticateBiometric(context) }
+    // 这些交互状态提升到屏幕顶层：LazyColumn 的 item 滑出视口后会被回收，
+    // remember 里的值随之销毁 —— 早先选好的账本、填了一半的预算滚出屏幕再回来就没了
+    var budgetLedgerId by remember { mutableStateOf<Long?>(null) }
+    var budgetMenu by remember { mutableStateOf(false) }
+    var rulesExpanded by remember { mutableStateOf(false) }
 
     fun loadAll() {
         scope.launch {
             // 复用同一个 db 实例，避免连续 4 次 getInstance
             val db = AppDatabase.getInstance(context)
-            rules = db.parseRuleDao().getAll()
             accounts = db.accountDao().getAllIncludingDisabled()
             ledgers = db.ledgerDao().getAll()
             budgetMap = db.budgetDao().getAll().associate { it.ledgerId to it.monthlyAmount }
@@ -312,12 +320,20 @@ internal fun SettingsScreen(
                 Text("账户管理", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 TextButton(onClick = {
                     scope.launch {
-                        AppDatabase.getInstance(context).accountDao()
-                            .insert(com.bookkeeping.app.data.entity.Account(
-                                name = "新账户",
-                                type = com.bookkeeping.app.data.entity.Account.AccountType.OTHER,
-                                icon = "💰"
-                            ))
+                        // Account.name 有唯一索引且 DAO 是 REPLACE：直接 insert 同名行会
+                        // 先把已有的「新账户」删掉再插入，旧 id 凭空消失，
+                        // 而 transactions.accountId 不会跟着更新 → 那些交易记账账户全变空白。
+                        // 这里先查重，名字已存在就往后加序号
+                        val dao = AppDatabase.getInstance(context).accountDao()
+                        val taken = dao.getAllIncludingDisabled().map { it.name }.toSet()
+                        var name = "新账户"
+                        var n = 2
+                        while (name in taken) { name = "新账户$n"; n++ }
+                        dao.insert(com.bookkeeping.app.data.entity.Account(
+                            name = name,
+                            type = com.bookkeeping.app.data.entity.Account.AccountType.OTHER,
+                            icon = "💰"
+                        ))
                         loadAll()
                     }
                 }) { Text("+ 新增", fontSize = 12.sp) }
@@ -371,11 +387,17 @@ internal fun SettingsScreen(
                 Text("账本管理", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 TextButton(onClick = {
                     scope.launch {
-                        AppDatabase.getInstance(context).ledgerDao()
-                            .insert(com.bookkeeping.app.data.entity.Ledger(
-                                name = "新账本",
-                                icon = "📒"
-                            ))
+                        // 同「新账户」：Ledger.name 唯一 + REPLACE，重复新增会静默替换掉已有账本，
+                        // 旧 id 消失后原账本下的交易与预算都悬空
+                        val dao = AppDatabase.getInstance(context).ledgerDao()
+                        val taken = dao.getAll().map { it.name }.toSet()
+                        var name = "新账本"
+                        var n = 2
+                        while (name in taken) { name = "新账本$n"; n++ }
+                        dao.insert(com.bookkeeping.app.data.entity.Ledger(
+                            name = name,
+                            icon = "📒"
+                        ))
                         loadAll()
                     }
                 }) { Text("+ 新增", fontSize = 12.sp) }
@@ -435,9 +457,7 @@ internal fun SettingsScreen(
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
 
-                    // ── 账本下拉选择 ──
-                    var budgetLedgerId by remember { mutableStateOf<Long?>(null) }
-                    var budgetMenu by remember { mutableStateOf(false) }
+                    // ── 账本下拉选择 ──（budgetLedgerId / budgetMenu 已提升到屏幕顶层）
                     val budgetLedger = ledgers.firstOrNull { it.id == budgetLedgerId }
 
                     Box {
@@ -497,7 +517,9 @@ internal fun SettingsScreen(
                                     budgetError = "请先选择账本"
                                     return@Button
                                 }
-                                val amt = budgetText.toDoubleOrNull()
+                                // 留空等同于设为 0（关闭预算）：上面的说明文案就是这么写的，
+                                // 早先留空会走到 else 报「请输入有效金额」，与文案自相矛盾
+                                val amt = budgetText.trim().let { if (it.isEmpty()) 0.0 else it.toDoubleOrNull() }
                                 if (amt != null && amt >= 0) {
                                     scope.launch {
                                         setBudgetForLedger(context, target, amt)
@@ -546,7 +568,6 @@ internal fun SettingsScreen(
             Card(shape = RoundedCornerShape(12.dp)) {
                 Column {
                     // ── 折叠头部：点击展开/收起规则清单 ──
-                    var rulesExpanded by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -571,7 +592,6 @@ internal fun SettingsScreen(
                             }
                         } else {
                             rules.forEach { rule ->
-                                var enabled by remember { mutableStateOf(rule.isEnabled) }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -590,9 +610,11 @@ internal fun SettingsScreen(
                                         )
                                     }
                                     androidx.compose.material3.Switch(
-                                        checked = enabled,
+                                        // 直接用 Flow 给出的 rule.isEnabled 作为唯一数据源。
+                                        // 早先这里用 remember 按位置缓存开关状态：列表重排
+                                        // （新增/删除规则）后，某个位置会记住上一条规则的开关
+                                        checked = rule.isEnabled,
                                         onCheckedChange = { newVal ->
-                                            enabled = newVal
                                             scope.launch {
                                                 AppDatabase.getInstance(context).parseRuleDao()
                                                     .update(rule.copy(isEnabled = newVal))

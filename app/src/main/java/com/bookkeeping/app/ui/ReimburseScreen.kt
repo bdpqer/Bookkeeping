@@ -1,4 +1,6 @@
 package com.bookkeeping.app.ui
+import com.bookkeeping.app.applyBalance
+import androidx.room.withTransaction
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,7 +76,14 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
     LaunchedEffect(tab) { selectedIds = emptySet() }
 
     val currentList = if (tab == 0) pendingList else doneList
-    val isAllSelected = currentList.isNotEmpty() && currentList.all { it.id in selectedIds }
+    // 「全选」只能作用于用户看得见的记录：折叠月份下的交易没有 checkbox，
+    // 一起选上会让用户在不知情的情况下批量报销屏幕上看不到的数据。
+    // 已报销 tab（tab=1）没有勾选框，可见集合为空，全选自然不可用
+    val visibleIds = if (tab == 0) {
+        pendingList.filter { monthFormat.format(Date(it.occurredAt)) in expandedMonths }
+            .map { it.id }.toSet()
+    } else emptySet()
+    val isAllSelected = visibleIds.isNotEmpty() && visibleIds.all { it in selectedIds }
     val selectedTotal = currentList.filter { it.id in selectedIds }.sumOf { it.amount }
 
     Scaffold(
@@ -241,11 +250,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                 Checkbox(
                                     checked = isAllSelected,
                                     onCheckedChange = { checked ->
-                                        selectedIds = if (checked) {
-                                            currentList.map { it.id }.toSet()
-                                        } else {
-                                            emptySet()
-                                        }
+                                        selectedIds = if (checked) visibleIds else emptySet()
                                     }
                                 )
                                 Text("全选", fontSize = 14.sp)
@@ -264,10 +269,14 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                             val ids = selectedIds.toList()
                                             if (ids.isEmpty()) return@launch
                                             withContext(Dispatchers.IO) {
-                                                // 1. 对每笔选中的待报销交易生成方向相反的入账（报销款回来）
                                                 val txs = currentList.filter { it.id in ids }
-                                                for (tx in txs) {
-                                                    val opposite = Transaction(
+                                                // ⚠️「生成入账 + 标记已报销」必须在同一事务里：
+                                                // 早先两者分离，中途异常时原件仍未标记完成，
+                                                // 用户再点一次就会对同一批生成第二轮入账（双倍报销）
+                                                db.withTransaction {
+                                                    // 1. 对每笔选中的待报销交易生成方向相反的入账（报销款回来）
+                                                    for (tx in txs) {
+                                                        val opposite = Transaction(
                                                         amount = tx.amount,
                                                         type = if (tx.type == Transaction.Type.EXPENSE)
                                                             Transaction.Type.INCOME
@@ -291,9 +300,11 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                                         reimburseStatus = null
                                                     )
                                                     db.transactionDao().insert(opposite)
+                                                    applyBalance(db, opposite)
                                                 }
                                                 // 2. 原交易标记为已报销
                                                 db.transactionDao().batchUpdateReimburseStatus(ids, "DONE")
+                                                }
                                             }
                                             selectedIds = emptySet()
                                             refresh()

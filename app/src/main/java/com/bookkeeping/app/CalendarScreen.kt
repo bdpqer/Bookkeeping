@@ -143,8 +143,12 @@ internal fun CalendarScreen() {
         Spacer(Modifier.height(4.dp))
 
         // 月历网格
+        // ⚠️ viewYearMonth 必须先把「日」置为 1 才能取 DAY_OF_WEEK：它默认是「今天」的克隆，
+        // 停在今天的日号上。早先直接取星期，拿到的是「今天几号」的星期
+        // （今天 10/6 是周二，而 10/1 实际是周四）→ 整月日期横向平移
+        val firstCal = (viewYearMonth.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
         val daysInMonth = viewYearMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
-        val firstDayOfWeek = (viewYearMonth.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY) // 0..6
+        val firstDayOfWeek = (firstCal.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY) // 0..6
         // 网格只随月份变化，缓存住避免每次重组重建 31+ 个元素的可变列表
         val gridCells = remember(viewYearMonth) {
             val totalCells = firstDayOfWeek + daysInMonth

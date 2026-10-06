@@ -97,17 +97,19 @@ fun TransactionEditDialog(
         if (amt <= 0) return
         scope.launch {
             withContext(Dispatchers.IO) {
-                db.transactionDao().update(
-                    tx.copy(
-                        amount = amt,
-                        type = selectedType,
-                        category = selectedCategory,
-                        merchant = merchant,
-                        note = note,
-                        accountId = selectedAccountId,
-                        ledgerId = selectedLedgerId
-                    )
+                val updated = tx.copy(
+                    amount = amt,
+                    type = selectedType,
+                    category = selectedCategory,
+                    merchant = merchant,
+                    note = note,
+                    accountId = selectedAccountId,
+                    ledgerId = selectedLedgerId
                 )
+                db.transactionDao().update(updated)
+                // 账户余额要跟着改：先冲回旧值，再计入新值
+                // （早先这里只 update 不动余额，改金额/改收支方向/换账户后余额永久失真）
+                reapplyBalance(db, tx, updated)
             }
             onSaved()
         }
@@ -128,6 +130,8 @@ fun TransactionEditDialog(
                         withContext(Dispatchers.IO) {
                             // 软删除：进回收站保留 30 天，凭证暂不删（彻底删除时再清理）
                             db.transactionDao().softDelete(tx.id, System.currentTimeMillis())
+                            // 进回收站就该把这笔对余额的影响冲回来，否则余额只减不增
+                            revertBalance(db, tx)
                         }
                         onDeleted()
                     }

@@ -63,6 +63,10 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
 
     LaunchedEffect(tab, selLedgerId) { refresh() }
 
+    /** 方向 → 对应 tab 下标：0=应收款 1=应付款 */
+    fun tabOf(dir: Receivable.Direction) =
+        if (dir == Receivable.Direction.RECEIVABLE) 0 else 1
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -222,7 +226,13 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
             ledgers = ledgers,
             forcedLedgerId = if (selLedgerId == 0L) null else selLedgerId,
             onDismiss = { showEditDialog = false; editingItem = null },
-            onSaved = { showEditDialog = false; editingItem = null; refresh() }
+            onSaved = { dir ->
+                showEditDialog = false
+                editingItem = null
+                // 切到该条目所属的那一侧，否则保存后它立刻被当前 tab 的过滤条件挡掉
+                if (tab != tabOf(dir)) tab = tabOf(dir) // LaunchedEffect(tab) 会自动 refresh
+                else refresh()
+            }
         )
     }
 }
@@ -345,7 +355,9 @@ private fun ReceivableEditDialog(
     ledgers: List<Ledger>,
     forcedLedgerId: Long?,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit
+    // 回调带上最终方向：用户在弹窗里可能切换到另一侧，
+    // 列表是按当前 tab 的方向过滤的，不改 tab 的话条目保存后就像凭空消失
+    onSaved: (Receivable.Direction) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -390,7 +402,7 @@ private fun ReceivableEditDialog(
                     TextButton(onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) { db.receivableDao().delete(item!!.id) }
-                            onSaved()
+                            onSaved(item.direction)
                         }
                     }) { Text("🗑 删除", color = DangerRed) }
                 }
@@ -550,7 +562,7 @@ private fun ReceivableEditDialog(
                             if (editing) db.receivableDao().update(itemToSave)
                             else db.receivableDao().insert(itemToSave)
                         }
-                        onSaved()
+                        onSaved(itemToSave.direction)
                     }
                 }, modifier = Modifier.weight(1f)) { Text("保存") }
             }

@@ -1,4 +1,5 @@
 package com.bookkeeping.app.ui
+import com.bookkeeping.app.applyBalance
 
 import com.bookkeeping.app.DetailTopBar
 import com.bookkeeping.app.categoryEmoji
@@ -80,7 +81,11 @@ fun RecycleBinScreen(onClose: () -> Unit) {
 
     fun restore(tx: Transaction) {
         scope.launch {
-            withContext(Dispatchers.IO) { db.transactionDao().restore(tx.id) }
+            // 从回收站恢复 = 这笔钱重新入账，余额要重新计入
+            withContext(Dispatchers.IO) {
+                db.transactionDao().restore(tx.id)
+                applyBalance(db, tx)
+            }
             reload()
         }
     }

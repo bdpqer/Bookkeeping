@@ -2,6 +2,7 @@ package com.bookkeeping.app
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -159,10 +160,15 @@ internal fun HomeScreen(
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
-                val (ok, skip) = importCsvFromUri(context, uri)
-                android.widget.Toast.makeText(
-                    context, "导入完成：新增 $ok 条，跳过重复 $skip 条", android.widget.Toast.LENGTH_LONG
-                ).show()
+                // 解析第三方 CSV 时任何 IO/格式异常都不该把 App 炸掉
+                val msg = try {
+                    val (ok, skip) = importCsvFromUri(context, uri)
+                    "导入完成：新增 $ok 条，跳过重复 $skip 条"
+                } catch (e: Exception) {
+                    Log.e(BookkeepingApp.TAG, "CSV 导入失败", e)
+                    "导入失败：${e.message ?: "文件格式不支持"}"
+                }
+                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }

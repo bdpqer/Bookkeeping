@@ -135,7 +135,13 @@ fun ManualAddDialog(
 
     var amountText by remember { mutableStateOf(initialAmount) }
     var selectedType by remember { mutableStateOf(initialType) }
-    var selectedCategory by remember { mutableStateOf(initialCategory ?: "购物") }
+    // 预填的分类（来自语音识别/外部入口）必须属于当前收支类型的分类表，
+    // 否则网格里没有一格会高亮，用户以为没选上，还会写出「收入挂着支出分类」的脏数据
+    var selectedCategory by remember {
+        mutableStateOf(
+            initialCategory?.takeIf { it in categoriesFor(initialType) } ?: categoriesFor(initialType).first()
+        )
+    }
     var merchant by remember { mutableStateOf("") }
     var note by remember { mutableStateOf(initialNote) }
     var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }
@@ -202,15 +208,8 @@ fun ManualAddDialog(
                 com.bookkeeping.app.ui.ReceiptStore.finalizePending(context, newId)
                 // 预算超支检查（每自然月最多提醒一次）
                 checkBudgetAndNotify(context, ledgerId = selectedLedgerId)
-                // 更新账户余额
-                if (selectedAccountId != null) {
-                    val delta = when (selectedType) {
-                        Transaction.Type.EXPENSE -> -amt
-                        Transaction.Type.INCOME -> amt
-                        Transaction.Type.TRANSFER -> 0.0
-                    }
-                    if (delta != 0.0) db.accountDao().adjustBalance(selectedAccountId!!, delta)
-                }
+                // 更新账户余额（与编辑/删除/自动记账共用同一口径）
+                applyBalance(db, tx.copy(amount = amt))
             }
             onDismiss()
         }

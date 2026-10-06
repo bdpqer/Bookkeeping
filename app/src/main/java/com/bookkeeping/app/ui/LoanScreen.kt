@@ -1,4 +1,6 @@
 package com.bookkeeping.app.ui
+import com.bookkeeping.app.ConfirmDialog
+import com.bookkeeping.app.applyBalance
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,6 +84,9 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
     var totalBorrowed by remember { mutableStateOf(0.0) }
     var showAdd by remember { mutableStateOf(false) }
     var repayTarget by remember { mutableStateOf<DebtRecord?>(null) }
+    // 借贷删除是硬删除（debts 表没有回收站），误触即永久丢失；
+    // 先弹二次确认，而不是点一下就删
+    var deleteTarget by remember { mutableStateOf<DebtRecord?>(null) }
 
     fun reload() {
         scope.launch {
@@ -182,12 +187,7 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
                         DebtItem(
                             debt = debt,
                             onRepay = { repayTarget = debt },
-                            onDelete = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) { db.debtDao().delete(debt.id) }
-                                    reload()
-                                }
-                            }
+                            onDelete = { deleteTarget = debt }
                         )
                     }
                 }
@@ -209,6 +209,23 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
             debt = target,
             onDismiss = { repayTarget = null },
             onSaved = { repayTarget = null; reload() }
+        )
+    }
+
+    deleteTarget?.let { target ->
+        ConfirmDialog(
+            title = "删除借贷记录",
+            message = "将永久删除「${target.person}」的这条借贷记录及其还款进度，且无法恢复。确定继续？",
+            confirmLabel = "删除",
+            destructive = true,
+            onConfirm = {
+                deleteTarget = null
+                scope.launch {
+                    withContext(Dispatchers.IO) { db.debtDao().delete(target.id) }
+                    reload()
+                }
+            },
+            onDismiss = { deleteTarget = null }
         )
     }
 }
@@ -471,8 +488,7 @@ private fun RepayDebtDialog(
                             withContext(Dispatchers.IO) {
                                 db.debtDao().updateRepaid(debt.id, debt.repaid + amt)
                                 if (alsoRecord) {
-                                    db.transactionDao().insert(
-                                        Transaction(
+                                    val savedTx = Transaction(
                                             amount = amt,
                                             type = if (isLent) Transaction.Type.INCOME else Transaction.Type.EXPENSE,
                                             category = "还款",
@@ -483,9 +499,13 @@ private fun RepayDebtDialog(
                                             isManual = true,
                                             confirmed = true,
                                             confidence = Transaction.Confidence.HIGH,
-                                            occurredAt = System.currentTimeMillis()
+                                            occurredAt = System.currentTimeMillis(),
+                                            // 显式带上账本/账户：不写会被 withDefaultAssociation 填成默认账本，
+                                            // 而借贷页是按账本过滤的，跨账本还款会记到别处去
+                                            ledgerId = debt.ledgerId
                                         ).withDefaultAssociation(db)
-                                    )
+                                    db.transactionDao().insert(savedTx)
+                                    applyBalance(db, savedTx)
                                 }
                             }
                             onSaved()

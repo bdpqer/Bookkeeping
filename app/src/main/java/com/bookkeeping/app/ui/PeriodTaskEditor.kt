@@ -30,6 +30,14 @@ import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.formatTime
 
 
+/** 两个时间戳是否为同一天（忽略时分秒），用于判断用户有没有改过首笔日期 */
+private fun sameDay(a: Long, b: Long): Boolean {
+    val ca = Calendar.getInstance().apply { timeInMillis = a }
+    val cb = Calendar.getInstance().apply { timeInMillis = b }
+    return ca.get(Calendar.YEAR) == cb.get(Calendar.YEAR) &&
+        ca.get(Calendar.DAY_OF_YEAR) == cb.get(Calendar.DAY_OF_YEAR)
+}
+
 // ─── 周期任务编辑器 ───────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,8 +92,13 @@ internal fun PeriodTaskEditor(
             set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
-        val isoWeekday = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
-        val base = (item ?: RecurringItem(
+        // 星期以用户在 chip 上的选择为准（下面的 dayOfWeek state 就是 chip 的值）。
+        // 早先这里改用首笔日期反推，chip 成了死控件，编辑已有任务还会静默改写原本正确的星期
+        val dow = if (period == RecurringItem.Period.WEEKLY) dayOfWeek else null
+        // 编辑且没有改动首笔日期时，沿用原有的下一次运行时间：
+        // 一律重置回首笔日期（必为过去）会让 getDue 立刻命中，保存后 triggerNow 就重复生成一笔交易
+        val existing = item
+        val base = (existing ?: RecurringItem(
             name = "", mode = mode, period = period,
             startDate = cal.timeInMillis, nextRunAt = cal.timeInMillis
         )).copy(
@@ -93,13 +106,14 @@ internal fun PeriodTaskEditor(
             mode = mode,
             period = period,
             dayOfMonth = if (period == RecurringItem.Period.MONTHLY || period == RecurringItem.Period.YEARLY) dom else null,
-            dayOfWeek = if (period == RecurringItem.Period.WEEKLY) isoWeekday else null,
+            dayOfWeek = dow,
             startDate = cal.timeInMillis,
             amount = if (mode == RecurringItem.Mode.AUTO_TX) amt else null,
             txType = if (mode == RecurringItem.Mode.AUTO_TX) txType else null,
             category = if (mode == RecurringItem.Mode.AUTO_TX) category else null,
             note = note,
-            nextRunAt = cal.timeInMillis,
+            nextRunAt = if (existing != null && sameDay(firstDate, existing.startDate)) existing.nextRunAt
+                        else cal.timeInMillis,
             isEnabled = item?.isEnabled ?: true,
             endMode = endMode,
             endAfterCount = if (endMode == RecurringItem.EndMode.AFTER_COUNT) endCountText.toIntOrNull() else null,
