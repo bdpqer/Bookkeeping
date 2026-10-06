@@ -75,6 +75,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val prefs = remember { getSharedPreferences("settings", MODE_PRIVATE) }
             var themeMode by remember { mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") }
 
+            // 初始化卡片透明度（一次性，从持久化值读入全局可观察状态；范围 0~100%）
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                com.bookkeeping.app.theme.CardAlphaState.value =
+                    prefs.getFloat(com.bookkeeping.app.theme.CARD_ALPHA_KEY, com.bookkeeping.app.theme.CARD_ALPHA_DEFAULT)
+                        .coerceIn(0f, 1f)
+            }
+
             val isDark = when (themeMode) {
                 "dark" -> true
                 "light" -> false
@@ -106,16 +113,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
 
             BookkeepingTheme(darkTheme = isDark) {
-                if (locked) {
-                    com.bookkeeping.app.ui.LockOverlay(onUnlocked = { locked = false })
-                } else {
-                    MainScaffold(
-                        themeMode = themeMode,
-                        onThemeChanged = { mode ->
-                            themeMode = mode
-                            prefs.edit().putString("theme_mode", mode).apply()
-                        }
-                    )
+                // 全局背景层：有自定义背景图就满铺 + 半透明遮罩；无则透出默认 surface
+                AppBackground {
+                    if (locked) {
+                        com.bookkeeping.app.ui.LockOverlay(onUnlocked = { locked = false })
+                    } else {
+                        MainScaffold(
+                            themeMode = themeMode,
+                            onThemeChanged = { mode ->
+                                themeMode = mode
+                                prefs.edit().putString("theme_mode", mode).apply()
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -173,6 +183,9 @@ private fun MainScaffold(
         .collectAsStateWithLifecycle(initialValue = 0)
 
     Scaffold(
+        // 透明容器：让外层 AppBackground 的自定义背景图透出来
+        // （Scaffold 默认 containerColor 是不透明 background 色，会把背景图整个盖住）
+        containerColor = Color.Transparent,
         topBar = {
             // 首页有自定义顶栏（☰/账本/搜索/云），不再显示通用顶栏
             if (currentTab != Tab.HOME) {
@@ -180,7 +193,8 @@ private fun MainScaffold(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
+                        // 全透明顶栏：直接透出全局背景图（半透明白纱会在图上叠出一层灰，
+                        // 用户已反馈过；文字可读性由背景图自身的遮罩保证）
                         .statusBarsPadding()
                         .height(48.dp),
                     contentAlignment = Alignment.CenterStart
@@ -201,7 +215,11 @@ private fun MainScaffold(
             }
         },
         bottomBar = {
-            NavigationBar {
+            // 透明底部导航：让自定义背景图贯通整个页面（0 阶调避免 surface 染色）
+            NavigationBar(
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp
+            ) {
                 NavigationBarItem(
                     selected = currentTab == Tab.HOME,
                     onClick = { currentTab = Tab.HOME },

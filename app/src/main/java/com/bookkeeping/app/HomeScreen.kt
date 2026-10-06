@@ -494,13 +494,27 @@ private fun HomeDrawer(
     }
 
     ModalDrawerSheet(
-        modifier = Modifier.width(220.dp),
+        modifier = Modifier
+            .width(220.dp)
+            // 抽屉背景：复用「本月结余卡」的 BannerGradient 做竖直渐变，
+            // 顶部品牌蓝渐变到底部，与 Hero 卡呼应；文字均为白/浅色，保证可读。
+            // ⚠️ 必须显式加右侧圆角 shape，否则矩形渐变会把 ModalDrawerSheet 自带的
+            // 右侧圆角盖掉（表现为"右边的圆角没了"）。
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(BannerGradient),
+                shape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)
+            ),
+        // ⚠️ ModalDrawerSheet 内部自带一个不透明 Surface（drawerContainerColor 默认为
+        // surface 底色 + tonalElevation 染色），会把 modifier 上的渐变完全盖住，
+        // 表现为"渐变太淡/白底白字看不清"。必须显式设为透明 + 0 阶调，渐变才可见。
+        drawerContainerColor = Color.Transparent,
+        drawerTonalElevation = 0.dp,
         windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
     ) {
         Column(Modifier.padding(start = 20.dp, end = 14.dp, top = 12.dp, bottom = 8.dp)) {
-            Text("记账助手", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+            Text("记账助手", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(2.dp))
-            Text("已陪伴 $companionDays 天", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("已陪伴 $companionDays 天", fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f))
         }
 
         DrawerRow("🤖", "自动记账") { onNavigateTab(Tab.SETTINGS) }
@@ -562,7 +576,7 @@ private fun DrawerRow(icon: String, label: String, onClick: () -> Unit) {
     ) {
         Text(icon, fontSize = 21.sp)
         Spacer(Modifier.width(18.dp))
-        Text(label, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(label, fontSize = 17.sp, color = Color.White)
     }
 }
 
@@ -570,12 +584,12 @@ private fun DrawerRow(icon: String, label: String, onClick: () -> Unit) {
 private fun DrawerSection(title: String) {
     HorizontalDivider(
         Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = Color.White.copy(alpha = 0.35f)
     )
     Text(
         title,
         fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = Color.White.copy(alpha = 0.8f),
         modifier = Modifier.padding(start = 24.dp, top = 2.dp, bottom = 4.dp)
     )
 }

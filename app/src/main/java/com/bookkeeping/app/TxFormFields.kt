@@ -225,6 +225,10 @@ internal fun DetailTopBar(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     TopAppBar(
+        // 透明顶栏：让全局自定义背景图透出（默认 surface 底色会盖住背景）
+        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent
+        ),
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

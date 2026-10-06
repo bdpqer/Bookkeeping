@@ -85,6 +85,8 @@ fun RecurringScreen(onClose: () -> Unit) {
         )
         else -> {
             Scaffold(
+                // 透明容器：透出全局自定义背景图
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
                     DetailTopBar(

@@ -239,6 +239,16 @@ internal fun SettingsScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // ── 自定义背景图 ──
+                    BackgroundPickerSection()
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // ── 卡片背景透明度 ──
+                    CardAlphaSection()
                 }
             }
         }
