@@ -96,6 +96,7 @@ fun RecycleBinScreen(onClose: () -> Unit) {
                 db.transactionDao().purge(tx.id)
                 ReceiptStore.deleteReceipt(context, tx.id)
             }
+            com.bookkeeping.app.BookkeepingApp.notifyTransactionChanged()
             reload()
         }
     }
@@ -106,6 +107,7 @@ fun RecycleBinScreen(onClose: () -> Unit) {
                 list.forEach { ReceiptStore.deleteReceipt(context, it.id) }
                 db.transactionDao().purgeAll()
             }
+            com.bookkeeping.app.BookkeepingApp.notifyTransactionChanged()
             reload()
         }
     }

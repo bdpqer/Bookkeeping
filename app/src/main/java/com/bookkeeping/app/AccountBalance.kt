@@ -23,6 +23,8 @@ internal suspend fun applyBalance(db: AppDatabase, tx: Transaction) {
     val id = tx.accountId ?: return
     val delta = balanceDelta(tx.type, tx.amount)
     if (delta != 0.0) db.accountDao().adjustBalance(id, delta)
+    // 写入那一刻（App 在前台）即通知 Widget 刷新，绕开后台 AppWidget 更新节流
+    BookkeepingApp.notifyTransactionChanged()
 }
 
 /** 删除/移入回收站后，把该笔交易此前对余额的影响反向冲回 */
@@ -30,6 +32,8 @@ internal suspend fun revertBalance(db: AppDatabase, tx: Transaction) {
     val id = tx.accountId ?: return
     val delta = -balanceDelta(tx.type, tx.amount)
     if (delta != 0.0) db.accountDao().adjustBalance(id, delta)
+    // 删除那一刻（App 在前台）即通知 Widget 刷新，绕开后台 AppWidget 更新节流
+    BookkeepingApp.notifyTransactionChanged()
 }
 
 /**

@@ -297,6 +297,7 @@ internal suspend fun importCsvFromUri(context: Context, uri: android.net.Uri): P
                 }
             }
         }
+        if (imported > 0) BookkeepingApp.notifyTransactionChanged()
         imported to skipped
     }
 }

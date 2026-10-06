@@ -226,6 +226,7 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                             withContext(Dispatchers.IO) {
                                                 db.transactionDao().softDelete(tx.id, System.currentTimeMillis())
                                             }
+                                            com.bookkeeping.app.BookkeepingApp.notifyTransactionChanged()
                                             refresh()
                                         }
                                     }

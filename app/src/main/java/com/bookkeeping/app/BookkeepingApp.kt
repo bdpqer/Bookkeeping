@@ -3,6 +3,7 @@ package com.bookkeeping.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.os.Handler
 import android.os.HandlerThread
 import android.provider.Telephony
@@ -14,15 +15,14 @@ import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.MerchantRule
 import com.bookkeeping.app.parser.ParseEngine
 import com.bookkeeping.app.receiver.SmsContentObserver
+import com.bookkeeping.app.widget.BookkeepingWidgetProvider
 import com.bookkeeping.app.worker.AutoBackupWorker
 import com.bookkeeping.app.worker.RecurringWorker
-import androidx.glance.appwidget.updateAll
-import kotlinx.coroutines.flow.debounce
-import com.bookkeeping.app.widget.BookkeepingWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 
 class BookkeepingApp : Application() {
@@ -47,8 +47,9 @@ class BookkeepingApp : Application() {
     }
 
     /**
-     * 交易表任意写入（手动/编辑/删除/CSV/周期/报销）后，去抖刷新桌面小组件。
-     * debounce 属 FlowPreview，此处显式 @OptIn 接受。
+     * 兜底刷新：观察 Room Flow，作为「显式即时刷新」(requestWidgetRefresh) 的补充，
+     * 覆盖任何没走 applyBalance 的写入。走原生 RemoteViews 同步刷新（前台即时、后台时受系统
+     * 节流，仅作最后兜底）。失败仅记日志、不致命。
      */
     @OptIn(FlowPreview::class)
     private fun startWidgetAutoRefresh() {
@@ -56,7 +57,35 @@ class BookkeepingApp : Application() {
             AppDatabase.getInstance(this@BookkeepingApp)
                 .transactionDao().observeAll()
                 .debounce(800)
-                .collect { BookkeepingWidget().updateAll(this@BookkeepingApp) }
+                .collect { requestWidgetRefresh() }
+        }
+    }
+
+    /**
+     * 刷新作用域：与 App 生命周期同寿。每个刷新请求独立成协程，单点失败不影响后续。
+     */
+    private val widgetRefreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * 交易写入「那一刻」即时刷新 Widget。
+     *
+     * 根因：Glance 的 update()/updateAll() 是「事件入队即返回」，真正构图在 Glance 内部
+     * session 的异步事件循环里稍后才执行，且 session 缓存 lastRemoteViews。App 退后台后事件
+     * 循环被系统节流/暂停 → 事件不被消费 → provideGlance 不重跑 → 数据停在旧值。这是 Glance
+     * 架构固有限制，任何「调用 update」都绕不过。
+     *
+     * 修法：改用原生 RemoteViews（BookkeepingWidgetProvider.onUpdate 里同步读库 +
+     * AppWidgetManager.updateAppWidget()）。这是同步、立即生效的，前台调用完全不受后台节流影响。
+     * 由 applyBalance / revertBalance / CSV 导入 / 报销 / 回收站在写入后调用。
+     */
+    fun requestWidgetRefresh() {
+        widgetRefreshScope.launch {
+            try {
+                BookkeepingWidgetProvider.updateAll(this@BookkeepingApp)
+            } catch (e: Exception) {
+                Log.e(TAG, "Widget 刷新失败", e)
+                writeDebug("❌ Widget 刷新失败: ${e.message}")
+            }
         }
     }
 
@@ -248,6 +277,15 @@ class BookkeepingApp : Application() {
         const val CHANNEL_ID_CAPTURE = "capture_service"
         const val CHANNEL_ID_BUDGET_ALERT = "budget_alert"
         const val TAG = "Bookkeeping"
+
+        /**
+         * 任意交易写入的统一通知入口（applyBalance / CSV 导入在写入那一刻调用）。
+         * 仅当 App 已初始化（instance 就绪）才生效；写入不可能早于 App 启动，故安全。
+         * 趁 App 在前台触发 widget 刷新，绕开后台 AppWidget 更新节流。
+         */
+        fun notifyTransactionChanged() {
+            if (this::instance.isInitialized) instance.requestWidgetRefresh()
+        }
     }
 }
 

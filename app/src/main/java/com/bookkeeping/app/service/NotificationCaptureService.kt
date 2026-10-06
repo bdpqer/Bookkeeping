@@ -20,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import androidx.glance.appwidget.updateAll
 import com.bookkeeping.app.formatAmount
 
 /**
@@ -191,8 +190,8 @@ class NotificationCaptureService : NotificationListenerService() {
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
-                // 刷新桌面 Widget
-                com.bookkeeping.app.widget.BookkeepingWidget().updateAll(this@NotificationCaptureService)
+                // 刷新桌面 Widget（走 await + 真实 id 的可靠刷新，避开 Glance updateAll 异步节流）
+                com.bookkeeping.app.BookkeepingApp.instance.requestWidgetRefresh()
             }
             if (id != null) {
                 lastInsertedAt[dupKey] = now

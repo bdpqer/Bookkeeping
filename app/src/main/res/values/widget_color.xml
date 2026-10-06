@@ -6,4 +6,7 @@
 <resources>
     <color name="widget_text">#FFFFFFFF</color>
     <color name="widget_accent">#FF4C7DD9</color>
+    <color name="widget_expense">#FFFF7B72</color>
+    <color name="widget_income">#FF56D364</color>
+    <color name="widget_divider">#1FFFFFFF</color>
 </resources>
