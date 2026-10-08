@@ -3,7 +3,9 @@ package com.bookkeeping.app.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
@@ -97,6 +99,9 @@ class NotificationCaptureService : NotificationListenerService() {
 
     override fun onDestroy() {
         scope.cancel()
+        // 必须置空：rulesRefresher 是静态的，服务销毁后仍非 null 会让外部误判
+        // 「服务在跑」而只调 refreshRules（scope 已 cancel，刷新实际不会执行）
+        rulesRefresher = null
         super.onDestroy()
     }
 
@@ -292,9 +297,38 @@ class NotificationCaptureService : NotificationListenerService() {
 
     companion object {
         private const val FOREGROUND_ID = 1001
+        internal const val ACTION_REFRESH = "com.bookkeeping.app.REFRESH_RULES"
 
         /** 规则热刷新钩子：onCreate 时由实例注册，保存解析规则后同进程直接调用 */
         @Volatile
         internal var rulesRefresher: (() -> Unit)? = null
+
+        /**
+         * 让服务立刻重读「自动记账总开关」与解析规则。
+         *
+         * ⚠️ 开关存在服务内存里（[autoCaptureEnabled]），只在 onCreate / refreshRules 时读盘。
+         * 设置页改开关只写 SharedPreferences 的话，服务仍按旧值工作 —— 用户打开开关后
+         * 通知/短信继续被静默丢弃，表现为「明明开了自动记账却什么都不解析」。
+         *
+         * 服务已在跑 → 直接刷新；服务没在跑（进程被杀/未自启）→ 用 startForegroundService 拉起，
+         * 它会走 onStartCommand → refreshRules。打开开关时 App 在前台，不受后台启动限制影响。
+         */
+        internal fun ensureStarted(context: Context) {
+            val refresher = rulesRefresher
+            if (refresher != null) {
+                refresher.invoke()
+                return
+            }
+            val intent = Intent(context, NotificationCaptureService::class.java).apply {
+                action = ACTION_REFRESH
+            }
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { Log.e(BookkeepingApp.TAG, "start capture service failed", it) }
+        }
     }
 }

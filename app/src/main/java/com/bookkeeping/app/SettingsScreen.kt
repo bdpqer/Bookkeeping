@@ -51,6 +51,7 @@ import com.bookkeeping.app.theme.SmsPurple
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.sanitizeAmountInput
 import com.bookkeeping.app.service.CaptureLogBus
+import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.ExpenseRed
 import com.bookkeeping.app.theme.IncomeGreen
 import com.bookkeeping.app.theme.DangerRed
@@ -240,6 +241,11 @@ internal fun SettingsScreen(
                         onCheckedChange = {
                             autoEnabled = it
                             settingsPrefs.edit().putBoolean("auto_capture_enabled", it).apply()
+                            // ⚠️ 开关是服务内存缓存，只写 SP 不生效：
+                            // 打开后服务仍按旧值「关」丢弃所有通知/短信（用户表现：开了却不解析）。
+                            // 开启时若服务没在跑（进程被杀/未自启）还要顺带拉起。
+                            if (it) NotificationCaptureService.ensureStarted(context)
+                            else NotificationCaptureService.rulesRefresher?.invoke()
                         }
                     )
                 }
