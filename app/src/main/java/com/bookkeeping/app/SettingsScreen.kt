@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -126,6 +127,12 @@ internal fun SettingsScreen(
         )
     }
 
+    // 通知权限（Android 13+ 是运行时权限）。用 areNotificationsEnabled() 而非 checkSelfPermission：
+    // 它同时覆盖「用户在系统设置里手动关掉通知」的情况，且低版本也能用。
+    var notifGranted by remember {
+        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+
     DisposableEffect(Unit) {
         val unsub = CaptureLogBus.subscribe { entries = it }
         onDispose { unsub() }
@@ -142,6 +149,7 @@ internal fun SettingsScreen(
             listenerEnabled = isNotificationListenerEnabled(context)
             smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
                 PackageManager.PERMISSION_GRANTED
+            notifGranted = NotificationManagerCompat.from(context).areNotificationsEnabled()
             hasPin = com.bookkeeping.app.ui.hasPinSet(context)
             lockEnabled = com.bookkeeping.app.ui.isLockEnabled(context)
             bioEnabled = com.bookkeeping.app.ui.isBiometricUnlockEnabled(context)
@@ -152,6 +160,12 @@ internal fun SettingsScreen(
 
     val smsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* 状态由 ON_RESUME 统一刷新 */ }
+
+    // 通知权限独立入口。此前它只在「短信读取」那一行被顺带申请，
+    // 用户不点那一行就永远拿不到授权 → Android 13+ 上所有提醒被系统静默丢弃（notify 不报错）。
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
     ) { /* 状态由 ON_RESUME 统一刷新 */ }
 
     LazyColumn(
@@ -177,11 +191,27 @@ internal fun SettingsScreen(
                         desc = "捕获银行短信内容",
                         granted = smsGranted,
                         onRequest = {
-                            val perms = mutableListOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
+                            // 只申请短信权限：通知权限交给下面独立的「通知提醒」入口。
+                            smsLauncher.launch(
+                                arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS)
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    PermissionRow(
+                        label = "通知提醒",
+                        desc = "周期入账 / 分期到期 / 预算超支提醒",
+                        granted = notifGranted,
+                        onRequest = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                perms += Manifest.permission.POST_NOTIFICATIONS
+                                notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                // Android 12 及以下没有运行时通知权限，跳系统通知设置页
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                )
                             }
-                            smsLauncher.launch(perms.toTypedArray())
                         }
                     )
                 }
