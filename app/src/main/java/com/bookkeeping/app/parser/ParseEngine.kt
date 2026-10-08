@@ -89,12 +89,33 @@ class ParseEngine(
     // ─── 规则匹配 ──────────────────────────────────────────────
 
     private fun matchRule(rule: ParseRule, text: String, pkg: String?, sender: String?): Boolean {
-        // 精确匹配包名
+        // 精确匹配包名（通知路径主要靠这条）
         if (pkg != null && rule.channel == pkg) return true
-        // 关键词匹配
-        if (rule.matchKeyword.isNotBlank() && text.contains(rule.matchKeyword)) return true
-        if (sender != null && rule.matchKeyword.isNotBlank() && sender.contains(rule.matchKeyword)) return true
+        val kw = rule.matchKeyword
+        if (kw.isBlank()) return false
+        // 关键词匹配（短信路径没有包名，只能靠关键词）
+        if (matchesKeyword(kw, text)) return true
+        if (sender != null && matchesKeyword(kw, sender)) return true
         return false
+    }
+
+    /**
+     * 关键词匹配：先整串包含，再按「|」拆分逐个包含。
+     *
+     * ⚠️ 不能只写 `target.contains(keyword)`：默认规则的关键词是「工行|95588」
+     * 这种多备选写法，而 contains 是字面量匹配，会去找短信里真的出现
+     * 「工行|95588」这串字符（含竖线）——永远不成立。短信路径没有包名可精确匹配，
+     * 结果就是短信侧所有规则全部失效，只能走无规则的通用兜底。
+     */
+    private fun matchesKeyword(keyword: String, target: String): Boolean {
+        if (target.isBlank()) return false
+        if (target.contains(keyword)) return true          // 单值关键词（如「浦发」）
+        if (!keyword.contains("|")) return false
+        // 多备选：按竖线拆分，任一命中即可（trim 容忍「工行| 95588」这类写法）
+        return keyword.split("|").any { part ->
+            val p = part.trim()
+            p.isNotBlank() && target.contains(p)
+        }
     }
 
     // ─── 字段提取 ──────────────────────────────────────────────
@@ -105,6 +126,11 @@ class ParseEngine(
             safeRegex(rule.patternAmount)?.let { re ->
                 findAmount(re, text)?.let { return it }
             }
+        }
+        // 交易动词锚定：「消费/支出/支付…」紧邻的数字优先取，
+        // 否则「您的账户余额1,234.56元，消费100元」会被前面那条余额抢走
+        for (re in VERB_AMOUNT_REGEXES) {
+            findAmount(re, text)?.let { return it }
         }
         // 锚定模式：货币符号/「元」紧跟数字（预编译）
         for (re in ANCHORED_AMOUNT_REGEXES) {
@@ -130,17 +156,31 @@ class ParseEngine(
         return null
     }
 
-    /** 取第一个非空捕获组作为金额（跳过 group 0 整体匹配；兼容多分支 alternation 模式） */
+    /**
+     * 取金额：遍历该正则的**所有**匹配，跳过「余额/额度」上下文里的数字，
+     * 返回第一个像交易金额的那个（跳过 group 0 整体匹配；兼容多分支 alternation 模式）。
+     *
+     * ⚠️ 原来是 `re.find()` 只取第一个匹配就返回，于是
+     * 「余额1,234.56元，消费100元」会被记成 1234.56 —— 余额数字在文本里更靠前。
+     */
     private fun findAmount(re: Regex, text: String): Double? {
-        val match = re.find(text) ?: return null
-        val raw = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: match.value
-        val num = raw.replace(",", "").toDoubleOrNull() ?: return null
-        return if (num > 0) num else null
+        for (match in re.findAll(text)) {
+            val raw = match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: match.value
+            val num = raw.replace(",", "").toDoubleOrNull() ?: continue
+            if (num <= 0) continue
+            // 数字前面紧挨着「余额/可用额度…」→ 不是本次交易金额，跳过继续找
+            val prefix = text.substring(maxOf(0, match.range.first - 16), match.range.first)
+            if (BALANCE_PREFIX_REGEX.containsMatchIn(prefix)) continue
+            return num
+        }
+        return null
     }
 
     private fun extractFirst(text: String, pattern: String): String {
         val match = safeRegex(pattern)?.find(text) ?: return ""
-        return match.groupValues.getOrNull(1) ?: match.value
+        // 取第一个非空捕获组：多分支正则（如「【(.+?)】|商户[：:](\S+)」）
+        // 命中后面分支时 groupValues[1] 是空串而不是 null，直接取 [1] 会得到空商户
+        return match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: match.value
     }
 
     // ─── 类型判断 ──────────────────────────────────────────────
@@ -219,6 +259,22 @@ class ParseEngine(
                 null
             }
 
+        /**
+         * 余额/额度上下文：数字前面紧挨（中间只隔空格、冒号、数字、逗号、小数点）
+         * 这些词时，该数字是账户余额不是交易金额，必须跳过。
+         */
+        private val BALANCE_PREFIX_REGEX =
+            Regex("""(?:余额|可用额度|剩余额度|信用额度|总额度|当前余额|账户余额)[\s:：为是0-9,，.]{0,10}$""")
+
+        /**
+         * 交易动词锚定：动词后面 6 个字符内紧跟的数字，优先级高于通用锚定模式。
+         * 这样「余额1,234.56元，消费100元」能直接锁定「消费」后面的 100。
+         */
+        private val VERB_AMOUNT_REGEXES: List<Regex> = listOf(
+            Regex("""(?:消费|支出|支付|付款|扣款|扣费|花费|花了|转账|汇出|转出|收入|入账|到账|收款|退款|还款|实付)[^\d¥￥]{0,6}[¥￥]?\s*([\d,]+\.\d{1,2})"""),
+            Regex("""(?:消费|支出|支付|付款|扣款|扣费|花费|花了|转账|汇出|转出|收入|入账|到账|收款|退款|还款|实付)[^\d¥￥]{0,6}[¥￥]?\s*(\d+(?:\.\d{1,2})?)""")
+        )
+
         /** 锚定金额模式：货币符号/「元」紧跟数字，优先级最高（预编译，避免每条通知重复编译正则） */
         private val ANCHORED_AMOUNT_REGEXES: List<Regex> = listOf(
             Regex("""[¥￥]\s*([\d,]+\.\d{1,2})"""),           // ¥1,234.56 或 ￥1234.56
@@ -256,6 +312,20 @@ class ParseEngine(
         private val COMMON_TRANSFER_REGEX = Regex("""转账|互联汇出|互联汇入""")
         private val COMMON_EXPENSE_REGEX = Regex("""支出|消费|扣款|支付|汇出|转出|付款|扣费|还款|花费|花了""")
 
+        /**
+         * 商户提取：银行短信/通知通常是「【XX银行】」署名，或「商户：XXX」。
+         *
+         * ⚠️ 之前没给任何规则配 patternMerchant，商户名恒为 ""，而
+         * TransactionDao.findDuplicate 是按 (金额 + 类型 + **商户** + 时间窗) 判重的，
+         * 结果就是 3 分钟内同金额的两笔真实消费，第二笔被当成重复静默丢弃。
+         */
+        private const val BANK_MERCHANT_PATTERN =
+            """【(.+?)】|商户[：:]\s*(\S+)|(?:收款方|付款方|对方|交易对方)[：: ]\s*(\S+)"""
+
+        /** 钱包类（微信/支付宝）：优先取收款方/商户名，其次【】署名 */
+        private const val WALLET_MERCHANT_PATTERN =
+            """(?:收款方|付款方|商户|商家|对方)[：: ]\s*(\S+)|【(.+?)】"""
+
         /** 预定义正则规则（硬编码在代码里，后续可迁移到 DB 让用户配置） */
         val DEFAULT_RULES: List<ParseRule> = listOf(
 
@@ -268,6 +338,7 @@ class ParseEngine(
                 patternExpense = "支出|汇出|扣款",
                 patternIncome = "收入|入账|汇入",
                 patternTransfer = "转账|互联汇出|互联汇入",
+                patternMerchant = BANK_MERCHANT_PATTERN,
                 priority = 100
             ),
 
@@ -279,6 +350,7 @@ class ParseEngine(
                 patternAmount = """人民币\s*([\d,]+\.\d{1,2})|¥\s*([\d,]+\.\d{1,2})|([\d,]+\.\d{1,2})""",
                 patternExpense = "支出|消费|扣款|支出",
                 patternIncome = "收入|入账|汇入",
+                patternMerchant = BANK_MERCHANT_PATTERN,
                 priority = 90
             ),
 
@@ -290,6 +362,7 @@ class ParseEngine(
                 patternAmount = """人民币\s*([\d,]+\.\d{1,2})|([\d,]+\.\d{1,2})""",
                 patternExpense = "支出|消费|扣款",
                 patternIncome = "收入|入账",
+                patternMerchant = BANK_MERCHANT_PATTERN,
                 priority = 90
             ),
 
@@ -301,6 +374,7 @@ class ParseEngine(
                 patternAmount = """¥\s*([\d,]+\.\d{1,2})|¥\s*(\d+(?:\.\d{1,2})?)""",
                 patternExpense = "付款|支付|消费",
                 patternIncome = "收款|到账|红包|转账收入",
+                patternMerchant = WALLET_MERCHANT_PATTERN,
                 priority = 80
             ),
 
@@ -312,6 +386,7 @@ class ParseEngine(
                 patternAmount = """¥\s*([\d,]+\.\d{1,2})|¥\s*(\d+(?:\.\d{1,2})?)""",
                 patternExpense = "付款|支付|消费|扣款",
                 patternIncome = "收入|退款|到账",
+                patternMerchant = WALLET_MERCHANT_PATTERN,
                 priority = 80
             ),
 
@@ -323,6 +398,7 @@ class ParseEngine(
                 patternAmount = """¥\s*([\d,]+\.\d{1,2})|([\d,]+\.\d{1,2})""",
                 patternExpense = "消费|支付|扣款",
                 patternIncome = "收入|入账",
+                patternMerchant = BANK_MERCHANT_PATTERN,
                 priority = 70
             ),
 
@@ -335,6 +411,7 @@ class ParseEngine(
                 patternExpense = "支出|消费|扣款|汇出|转出",
                 patternIncome = "收入|入账|汇入|转入|到账",
                 patternTransfer = "转账|互联汇出|互联汇入",
+                patternMerchant = BANK_MERCHANT_PATTERN,
                 priority = 10
             )
         )
