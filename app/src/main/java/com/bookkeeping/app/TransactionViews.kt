@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
+import com.bookkeeping.app.theme.AppDropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -88,10 +88,12 @@ internal fun TransactionItem(
                 .padding(vertical = 6.dp)
         )
     } else {
+        // 与首页/设置页等处的卡片保持一致：不写死容器色（用 Card 默认的 surfaceContainerHighest），
+        // 这样「卡片背景透明度」和「卡片背景颜色」两项设置才能作用到明细条目上；
+        // 圆角也从 12dp 统一到 14dp。
         Card(
             modifier = Modifier.fillMaxWidth().clickable { onClick() },
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            shape = RoundedCornerShape(14.dp)
         ) {
             TransactionRow(
                 tx = tx,
@@ -99,7 +101,7 @@ internal fun TransactionItem(
                 typeColor = typeColor,
                 emoji = emoji,
                 hasReceipt = hasReceipt,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
             )
         }
     }
@@ -330,7 +332,7 @@ internal fun LedgerDropdownTitle(
             )
             Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+        AppDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(
                 text = { Text("📚 全部账本") },
                 onClick = { menu = false; onSelect(0L) }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
+import com.bookkeeping.app.theme.AppDropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -109,18 +110,23 @@ internal fun TxCategoryGrid(
     }
 }
 
-/** 账户下拉行：[label] 随交易类型变化（付款/收款/转出账户） */
+/**
+ * 账户下拉行：[label] 随交易类型变化（付款/收款/转出账户）。
+ * @param contentColor 标签/选中名/箭头的文字色。默认取主题的次要文字色；
+ *                     直接铺在渐变背景上时须传白色，否则灰色压在蓝段几乎看不见。
+ */
 @Composable
 internal fun TxAccountRow(
     accounts: List<Account>,
     selectedAccountId: Long?,
     label: String,
     onSelect: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, fontSize = 13.sp, color = contentColor)
         Spacer(Modifier.weight(1f))
         Box {
             Row(Modifier.clickable { menu = true }, verticalAlignment = Alignment.CenterVertically) {
@@ -128,11 +134,12 @@ internal fun TxAccountRow(
                     accounts.firstOrNull { it.id == selectedAccountId }
                         ?.let { "${it.icon} ${it.name}" } ?: "",
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    color = contentColor
                 )
-                Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(" ▾", fontSize = 11.sp, color = contentColor)
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            AppDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 accounts.forEach { acc ->
                     DropdownMenuItem(
                         text = { Text("${acc.icon} ${acc.name}") },
@@ -151,11 +158,12 @@ internal fun TxLedgerRow(
     selectedLedgerId: Long?,
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    locked: Boolean = false
+    locked: Boolean = false,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("记账账本", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("记账账本", fontSize = 13.sp, color = contentColor)
         Spacer(Modifier.weight(1f))
         Box {
             Row(
@@ -166,13 +174,14 @@ internal fun TxLedgerRow(
                     ledgers.firstOrNull { it.id == selectedLedgerId }
                         ?.let { "${it.icon} ${it.name}" } ?: "未选择",
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    color = contentColor
                 )
                 if (!locked) {
-                    Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(" ▾", fontSize = 11.sp, color = contentColor)
                 }
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            AppDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 ledgers.forEach { led ->
                     DropdownMenuItem(
                         text = { Text("${led.icon} ${led.name}") },
@@ -224,18 +233,31 @@ internal fun DetailTopBar(
     title: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    TopAppBar(
-        // 透明顶栏：让全局自定义背景图透出（默认 surface 底色会盖住背景）
-        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-            containerColor = androidx.compose.ui.graphics.Color.Transparent
-        ),
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-            }
-        },
-        title = title,
-        actions = actions,
-        windowInsets = WindowInsets(0, 0, 0, 0)
-    )
+    // title 是调用方传入的 Composable（多数是裸 Text，色取 LocalContentColor）。
+    // 二级页面背景是深色渐变，这里把整棵子树的内容色兜底改成白色，
+    // 免得每个调用处都要单独给标题加 color = White。
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.material3.LocalContentColor provides androidx.compose.ui.graphics.Color.White
+    ) {
+        TopAppBar(
+            // 透明顶栏：露出外层 Scaffold 铺的抽屉同源渐变背景
+            colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                // 渐变底是深蓝→金，内容统一白色才可读（与 ModalDrawerSheet 抽屉内的白字一致）
+                titleContentColor = androidx.compose.ui.graphics.Color.White,
+                navigationIconContentColor = androidx.compose.ui.graphics.Color.White,
+                actionIconContentColor = androidx.compose.ui.graphics.Color.White
+            ),
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
+            title = title,
+            actions = actions,
+            // 二级页面现在全屏铺到状态栏后面，顶栏必须用 Material3 默认 insets
+            // （= systemBars 顶部+左右）自己避开状态栏，否则返回键会被状态栏压住
+            windowInsets = androidx.compose.material3.TopAppBarDefaults.windowInsets
+        )
+    }
 }

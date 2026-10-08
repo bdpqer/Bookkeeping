@@ -27,4 +27,8 @@ interface AccountDao {
     /** 更新账户余额（收入 +，支出 -） */
     @Query("UPDATE accounts SET balance = balance + :delta WHERE id = :id")
     suspend fun adjustBalance(id: Long, delta: Double)
+
+    /** 直接写入余额（按交易重算时用：增量累加一旦漂移只能整体覆盖） */
+    @Query("UPDATE accounts SET balance = :value WHERE id = :id")
+    suspend fun setBalance(id: Long, value: Double)
 }

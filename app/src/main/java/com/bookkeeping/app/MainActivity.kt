@@ -80,6 +80,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 com.bookkeeping.app.theme.CardAlphaState.value =
                     prefs.getFloat(com.bookkeeping.app.theme.CARD_ALPHA_KEY, com.bookkeeping.app.theme.CARD_ALPHA_DEFAULT)
                         .coerceIn(0f, 1f)
+                // 初始化卡片背景自定义色（-1L = 默认跟随主题灰白；否则为 ARGB int）
+                val stored = prefs.getLong(com.bookkeeping.app.theme.CARD_COLOR_KEY, -1L)
+                com.bookkeeping.app.theme.CardColorState.value =
+                    if (stored == -1L) null else androidx.compose.ui.graphics.Color(stored.toInt())
             }
 
             val isDark = when (themeMode) {
@@ -173,6 +177,9 @@ private fun MainScaffold(
     var voiceVisible by remember { mutableStateOf(false) }
     var voicePrefill by remember { mutableStateOf<VoicePrefill?>(null) }
     var secondaryOpen by remember { mutableStateOf(false) }
+    // Tab 内的全屏叠层页（如明细/待确认里点开交易编辑）：打开时主框架的标题栏、
+    // 底部导航栏、悬浮按钮都要让位，否则会与叠层页自己的顶栏/底部按钮重叠
+    var overlayOpen by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bookkeeping.app.data.entity.ParseRule?>(null) }
     var showRuleEditor by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -186,9 +193,14 @@ private fun MainScaffold(
         // 透明容器：让外层 AppBackground 的自定义背景图透出来
         // （Scaffold 默认 containerColor 是不透明 background 色，会把背景图整个盖住）
         containerColor = Color.Transparent,
+        // ⚠️ 关键：containerColor=Transparent 时，contentColorFor(Transparent) 会返回
+        // Color.Unspecified，导致 LocalContentColor 回退成黑色 —— 深色模式下所有未显式
+        // 指定颜色的标题文字/图标（汉堡、账本名、搜索、各页标题、分组标题）全变黑。
+        // 这里显式指定 contentColor=onBackground，深色模式自动变白、浅色模式变深色。
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             // 首页有自定义顶栏（☰/账本/搜索/云），不再显示通用顶栏
-            if (currentTab != Tab.HOME) {
+            if (currentTab != Tab.HOME && !overlayOpen && !secondaryOpen) {
                 // 自定义标题栏：TopAppBar 高度固定 64dp 压不矮，用 Box 自控高度
                 Box(
                     Modifier
@@ -216,7 +228,8 @@ private fun MainScaffold(
         },
         bottomBar = {
             // 透明底部导航：让自定义背景图贯通整个页面（0 阶调避免 surface 染色）
-            NavigationBar(
+            // 二级页面 / Tab 内叠层页打开时整条让位，由叠层页自己铺满（含系统栏）
+            if (!overlayOpen && !secondaryOpen) NavigationBar(
                 containerColor = Color.Transparent,
                 tonalElevation = 0.dp
             ) {
@@ -266,25 +279,40 @@ private fun MainScaffold(
             }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // ⚠️ 外层 Box 不能加 padding：抽屉里的二级页面（借贷/周期/报销/应收/回收站）
+        // 是以全屏叠层方式渲染的，父容器一旦带上 Scaffold 的 padding（含状态栏 +
+        // 底部导航栏 insets），它们就被锁在这个区域内，系统栏永远铺不满。
+        // 这里改由每个 Tab 各自加 padding，二级页面保持全屏。
+        Box(Modifier.fillMaxSize()) {
             when (currentTab) {
                 Tab.HOME -> HomeScreen(
+                    modifier = Modifier.padding(padding),
                     onNavigate = { currentTab = it },
                     onSecondaryScreenChanged = { secondaryOpen = it }
                 )
-                Tab.CALENDAR -> CalendarScreen()
-                Tab.PENDING -> PendingScreen()
-                Tab.LIST -> TransactionListScreen()
-                Tab.SETTINGS -> SettingsScreen(
-                    themeMode = themeMode,
-                    onThemeChanged = onThemeChanged,
-                    onNewRule = { editingRule = null; showRuleEditor = true },
-                    onEditRule = { editingRule = it; showRuleEditor = true }
+                Tab.CALENDAR -> Box(Modifier.padding(padding)) { CalendarScreen() }
+                // 这两个 Tab 自己接收 padding：内部的编辑页要以全屏叠层渲染，
+                // 不能跟页面内容一起被 padding 限制在内容区里
+                Tab.PENDING -> PendingScreen(
+                    modifier = Modifier.padding(padding),
+                    onOverlayChanged = { overlayOpen = it }
                 )
+                Tab.LIST -> TransactionListScreen(
+                    modifier = Modifier.padding(padding),
+                    onOverlayChanged = { overlayOpen = it }
+                )
+                Tab.SETTINGS -> Box(Modifier.padding(padding)) {
+                    SettingsScreen(
+                        themeMode = themeMode,
+                        onThemeChanged = onThemeChanged,
+                        onNewRule = { editingRule = null; showRuleEditor = true },
+                        onEditRule = { editingRule = it; showRuleEditor = true }
+                    )
+                }
             }
 
             // 钱迹风格大按钮：可在屏幕上任意拖动；点按记一笔，长按语音记账
-            if (!secondaryOpen && currentTab != Tab.SETTINGS && currentTab != Tab.PENDING && currentTab != Tab.CALENDAR) {
+            if (!secondaryOpen && !overlayOpen && currentTab != Tab.SETTINGS && currentTab != Tab.PENDING && currentTab != Tab.CALENDAR) {
                 val config = androidx.compose.ui.platform.LocalConfiguration.current
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 val maxDragX = with(density) { (config.screenWidthDp.dp - 74.dp).toPx() }
@@ -295,6 +323,9 @@ private fun MainScaffold(
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
+                        // 外层 Box 不再统一加 padding（为了让二级页面全屏铺满），这里单独
+                        // 把底部导航栏的高度让出来，免得悬浮按钮压在 NavigationBar 上
+                        .padding(bottom = padding.calculateBottomPadding())
                         .padding(16.dp)
                         .size(58.dp)
                         .offset { IntOffset(dragX.roundToInt(), dragY.roundToInt()) }

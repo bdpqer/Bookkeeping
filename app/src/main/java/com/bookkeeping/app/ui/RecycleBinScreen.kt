@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bookkeeping.app.formatAmount
 import kotlinx.coroutines.launch
+import com.bookkeeping.app.theme.drawerGradientBackground
+import androidx.compose.foundation.layout.systemBars
 
 /** 保留 30 天后自动清除 */
 private const val RETENTION_DAYS = 30L
@@ -113,9 +115,12 @@ fun RecycleBinScreen(onClose: () -> Unit) {
     }
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onClose,

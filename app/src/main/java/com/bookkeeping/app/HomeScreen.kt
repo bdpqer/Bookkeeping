@@ -81,6 +81,7 @@ private data class HomeSums(
 
 @Composable
 internal fun HomeScreen(
+    modifier: Modifier = Modifier,
     onNavigate: (Tab) -> Unit = {},
     onSecondaryScreenChanged: (Boolean) -> Unit = {}
 ) {
@@ -270,7 +271,11 @@ internal fun HomeScreen(
         )
     }
 
+    // ⚠️ modifier 只作用于抽屉主页本身（由外部传入 padding，避开状态栏/底部导航栏）。
+    // 二级页面（借贷/周期/报销/应收/回收站）不在这个 modifier 范围内，它们以全屏叠层
+    // 渲染，才能连同状态栏、导航栏一起铺满。
     ModalNavigationDrawer(
+        modifier = modifier,
         drawerState = drawerState,
         drawerContent = {
             HomeDrawer(
@@ -321,12 +326,15 @@ internal fun HomeScreen(
         // ── Hero 本月结余卡 ──
         item {
             val balance = monthIncome - monthExpense
+            // 渐变卡背景透明度跟随「卡片背景透明度」设置：只让渐变底色变淡，白字保持清晰。
+            // 直接给整个 Box 加 alpha 会把白字也一起变淡，所以这里把渐变色的 alpha 逐个乘上。
+            val heroAlpha = com.bookkeeping.app.theme.CardAlphaState.state.value
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
                         androidx.compose.ui.graphics.Brush.horizontalGradient(
-                            BannerGradient
+                            com.bookkeeping.app.theme.BannerGradient.map { it.copy(alpha = heroAlpha) }
                         ),
                         RoundedCornerShape(18.dp)
                     )

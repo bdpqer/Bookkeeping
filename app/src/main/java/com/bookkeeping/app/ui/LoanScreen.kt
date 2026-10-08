@@ -70,6 +70,8 @@ import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.withDefaultAssociation
 import kotlinx.coroutines.launch
 import com.bookkeeping.app.TxLedgerRow
+import com.bookkeeping.app.theme.drawerGradientBackground
+import androidx.compose.foundation.layout.systemBars
 
 /** 借贷管理全屏页：借出/借入列表 + 新增 + 还款冲抵 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,9 +106,12 @@ fun LoanScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -> Unit
     LaunchedEffect(selLedgerId) { reload() }
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onClose,

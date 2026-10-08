@@ -8,9 +8,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import com.bookkeeping.app.theme.ExpenseRedFaint
 import com.bookkeeping.app.DetailTopBar
@@ -38,6 +41,10 @@ import kotlinx.coroutines.launch
 import com.bookkeeping.app.TxLedgerRow
 
 import com.bookkeeping.app.EmptyState
+import com.bookkeeping.app.theme.drawerGradientBackground
+import com.bookkeeping.app.outlinedOnGradient
+import com.bookkeeping.app.theme.BrandBlue
+import androidx.compose.foundation.layout.systemBars
 /** 应收/应付款管理页 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,9 +75,12 @@ fun ReceivableScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () -
         if (dir == Receivable.Direction.RECEIVABLE) 0 else 1
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onClose,
@@ -379,49 +389,71 @@ private fun ReceivableEditDialog(
     }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // 必填项标签：红色星号 + 加粗
+    // 渐变底（深蓝→青→金）上统一白色文字
+    val onGradient = Color.White
+
+    // 必填项标签：红色星号 + 加粗（渐变底上用提亮一档的红，避免发暗）
     val requiredLabel: @Composable (String) -> Unit = { text ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("*", color = DangerRed, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("*", color = Color(0xFFFF8A80), fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.width(2.dp))
-            Text(text, fontWeight = FontWeight.Bold)
+            Text(text, fontWeight = FontWeight.Bold, color = onGradient)
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Column(Modifier.fillMaxSize().embeddedImePadding().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onDismiss) { Text("✕") }
+    // 与二级页面同款：抽屉同源竖向渐变铺满（含状态栏/底部导航栏）
+    Column(Modifier.fillMaxSize().drawerGradientBackground().embeddedImePadding()) {
+        DetailTopBar(
+            onBack = onDismiss,
+            title = {
                 Text(
                     if (editing) "编辑" else "新建 ${if (defaultDirection == Receivable.Direction.RECEIVABLE) "应收款" else "应付款"}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.weight(1f)
+                    fontWeight = FontWeight.Bold
                 )
+            },
+            actions = {
                 if (editing) {
                     TextButton(onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) { db.receivableDao().delete(item!!.id) }
                             onSaved(item.direction)
                         }
-                    }) { Text("🗑 删除", color = DangerRed) }
+                    }) { Text("🗑 删除", color = Color(0xFFFF8A80)) }
                 }
             }
+        )
 
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
                 // 方向
-                Text("类型", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("类型", fontSize = 12.sp, color = onGradient)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     InputChip(
                         selected = direction == Receivable.Direction.RECEIVABLE,
                         onClick = { direction = Receivable.Direction.RECEIVABLE },
-                        label = { Text("💰 应收款（别人给我）") }
+                        label = { Text("💰 应收款（别人给我）") },
+                        colors = InputChipDefaults.inputChipColors(
+                            selectedContainerColor = onGradient,
+                            selectedLabelColor = BrandBlue,
+                            containerColor = onGradient.copy(alpha = 0.22f),
+                            labelColor = onGradient
+                        )
                     )
                     InputChip(
                         selected = direction == Receivable.Direction.PAYABLE,
                         onClick = { direction = Receivable.Direction.PAYABLE },
-                        label = { Text("💸 应付款（我要给）") }
+                        label = { Text("💸 应付款（我要给）") },
+                        colors = InputChipDefaults.inputChipColors(
+                            selectedContainerColor = onGradient,
+                            selectedLabelColor = BrandBlue,
+                            containerColor = onGradient.copy(alpha = 0.22f),
+                            labelColor = onGradient
+                        )
                     )
                 }
 
@@ -431,7 +463,8 @@ private fun ReceivableEditDialog(
                     ledgers = ledgers,
                     selectedLedgerId = selLedgerId,
                     onSelect = { selLedgerId = it },
-                    locked = forcedLedgerId != null
+                    locked = forcedLedgerId != null,
+                    contentColor = onGradient
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -440,7 +473,10 @@ private fun ReceivableEditDialog(
                     onValueChange = { counterparty = it; error = null },
                     label = { requiredLabel("对方（如：房东/信用卡/XX公司）") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
+                shape = RoundedCornerShape(12.dp),
+                colors = outlinedOnGradient(onGradient),
+                modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -452,11 +488,14 @@ private fun ReceivableEditDialog(
                     },
                     label = { requiredLabel("金额") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
+                shape = RoundedCornerShape(12.dp),
+                colors = outlinedOnGradient(onGradient),
+                modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(Modifier.height(12.dp))
-                Text("到期日：$dueDateStr", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("到期日：$dueDateStr", fontSize = 12.sp, color = onGradient)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("今天", "+1天", "+3天", "+7天", "+30天").forEach { label ->
@@ -472,7 +511,8 @@ private fun ReceivableEditDialog(
                                 }
                                 dueDateMillis = cal.timeInMillis
                             },
-                            label = { Text(label) }
+                            label = { Text(label) },
+                            colors = AssistChipDefaults.assistChipColors(labelColor = onGradient)
                         )
                     }
                 }
@@ -483,7 +523,10 @@ private fun ReceivableEditDialog(
                     onValueChange = { category = it },
                     label = { Text("分类（可选，如：房租/信用卡/物业费）") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
+                shape = RoundedCornerShape(12.dp),
+                colors = outlinedOnGradient(onGradient),
+                modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -491,23 +534,38 @@ private fun ReceivableEditDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("备注（可选）") },
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
+                shape = RoundedCornerShape(12.dp),
+                colors = outlinedOnGradient(onGradient),
+                modifier = Modifier.fillMaxWidth()
                 )
 
                 if (editing) {
                     Spacer(Modifier.height(12.dp))
-                    Text("状态", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("状态", fontSize = 12.sp, color = onGradient)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         InputChip(
                             selected = status == Receivable.Status.PENDING,
                             onClick = { status = Receivable.Status.PENDING },
-                            label = { Text("⏳ 待处理") }
+                            label = { Text("⏳ 待处理") },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = onGradient,
+                                selectedLabelColor = BrandBlue,
+                                containerColor = onGradient.copy(alpha = 0.22f),
+                                labelColor = onGradient
+                            )
                         )
                         InputChip(
                             selected = status == Receivable.Status.DONE,
                             onClick = { status = Receivable.Status.DONE },
-                            label = { Text("✅ 已完成") }
+                            label = { Text("✅ 已完成") },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = onGradient,
+                                selectedLabelColor = BrandBlue,
+                                containerColor = onGradient.copy(alpha = 0.22f),
+                                labelColor = onGradient
+                            )
                         )
                     }
                 }
@@ -518,7 +576,7 @@ private fun ReceivableEditDialog(
             error?.let {
                 Text(
                     "⚠️ $it",
-                    color = DangerRed,
+                    color = Color(0xFFFF8A80),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
@@ -526,11 +584,17 @@ private fun ReceivableEditDialog(
             }
 
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("取消") }
-                Button(onClick = {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = onGradient),
+                    border = BorderStroke(1.dp, onGradient)
+                ) { Text("取消") }
+                Button(
+                    onClick = {
                     val msg = when {
                         counterparty.isBlank() -> "请填写对方（必填项）"
                         amountText.isBlank() -> "请填写金额（必填项）"
@@ -564,8 +628,14 @@ private fun ReceivableEditDialog(
                         }
                         onSaved(itemToSave.direction)
                     }
-                }, modifier = Modifier.weight(1f)) { Text("保存") }
+                },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = onGradient,
+                        contentColor = BrandBlue
+                    )
+                ) { Text("保存") }
             }
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
-}

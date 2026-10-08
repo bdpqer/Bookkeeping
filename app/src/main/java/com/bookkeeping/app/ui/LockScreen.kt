@@ -37,6 +37,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import java.security.MessageDigest
 import com.bookkeeping.app.theme.DangerRed
+import com.bookkeeping.app.theme.drawerGradientBackground
 
 /**
  * 锁定状态（进程级）。离开 App（onPause）时置 false，重新进入需解锁。
@@ -134,17 +135,20 @@ fun LockOverlay(onUnlocked: () -> Unit) {
         }
     }
 
+    // 与二级页面同款：抽屉同源渐变底（蓝→青→金），文字统一白色
+    val onGradient = Color.White
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .drawerGradientBackground()
             .clickable(enabled = false) { /* 挡住下层点击 */ },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("🔒", fontSize = 40.sp)
             Spacer(Modifier.height(8.dp))
-            Text("记账助手已锁定", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("记账助手已锁定", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = onGradient)
 
             Spacer(Modifier.height(20.dp))
 
@@ -159,8 +163,8 @@ fun LockOverlay(onUnlocked: () -> Unit) {
                             modifier = Modifier
                                 .size(if (idx < pinInput.length) 12.dp else 10.dp)
                                 .background(
-                                    if (idx < pinInput.length) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                    if (idx < pinInput.length) onGradient
+                                    else onGradient.copy(alpha = 0.3f),
                                     CircleShape
                                 )
                         )
@@ -170,12 +174,13 @@ fun LockOverlay(onUnlocked: () -> Unit) {
 
             Spacer(Modifier.height(8.dp))
             if (errorText.isNotBlank()) {
-                Text(errorText, color = DangerRed, fontSize = 13.sp)
+                // 渐变底上用提亮一档的红（DangerRed 压在蓝段发暗）
+                Text(errorText, color = Color(0xFFFF8A80), fontSize = 13.sp)
             } else if (biometricEnabled) {
                 Text(
                     "👆 或点击下方指纹解锁",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = onGradient
                 )
             }
 
@@ -196,7 +201,7 @@ fun LockOverlay(onUnlocked: () -> Unit) {
                                 modifier = Modifier
                                     .size(64.dp)
                                     .background(
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        onGradient.copy(alpha = 0.22f),
                                         RoundedCornerShape(14.dp)
                                     )
                                     .clickable(enabled = key.isNotBlank()) {
@@ -217,7 +222,7 @@ fun LockOverlay(onUnlocked: () -> Unit) {
                                     key,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = if (key.isBlank()) Color.Transparent else MaterialTheme.colorScheme.onSurface
+                                    color = if (key.isBlank()) Color.Transparent else onGradient
                                 )
                             }
                         }

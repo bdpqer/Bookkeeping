@@ -1,5 +1,6 @@
 package com.bookkeeping.app.ui
 import com.bookkeeping.app.applyBalance
+import com.bookkeeping.app.revertBalance
 import androidx.room.withTransaction
 
 import androidx.compose.foundation.background
@@ -35,6 +36,8 @@ import com.bookkeeping.app.formatTime
 import com.bookkeeping.app.theme.LentOrange
 import com.bookkeeping.app.theme.SuccessGreen
 import com.bookkeeping.app.theme.TransferOrange
+import com.bookkeeping.app.theme.drawerGradientBackground
+import androidx.compose.foundation.layout.systemBars
 
 
 
@@ -86,9 +89,12 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
     val selectedTotal = currentList.filter { it.id in selectedIds }.sumOf { it.amount }
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onClose,
@@ -227,6 +233,9 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
                                         scope.launch {
                                             withContext(Dispatchers.IO) {
                                                 db.transactionDao().softDelete(tx.id, System.currentTimeMillis())
+                                                // 与编辑弹窗的删除走同一口径：进回收站就把这笔对余额的影响冲回来，
+                                                // 早先这里只软删不冲回 → 从报销页删掉的记录仍占着余额
+                                                revertBalance(db, tx)
                                             }
                                             com.bookkeeping.app.BookkeepingApp.notifyTransactionChanged()
                                             refresh()
@@ -353,7 +362,8 @@ fun ReimburseScreen(ledgers: List<Ledger>, initialLedgerId: Long, onClose: () ->
             onDeleted = {
                 refresh()
                 editingTx = null
-            }
+            },
+            embedded = true
         )
     }
 }

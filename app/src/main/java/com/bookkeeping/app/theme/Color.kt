@@ -1,5 +1,8 @@
 package com.bookkeeping.app.theme
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 val Purple80 = Color(0xFFD0BCFF)
@@ -70,6 +73,20 @@ val WidgetDivider = Color(0x1FFFFFFF)
 
 /** 渐变横幅（本月结余卡）：蓝 → 青 → 金 */
 val BannerGradient = listOf(Color(0xFF4A90D9), Color(0xFF7EC8E3), Color(0xFFE8C468))
+
+/**
+ * 抽屉二级页面统一背景：与 ModalDrawerSheet 完全相同的竖向渐变（蓝 → 青 → 金）。
+ *
+ * ⚠️ 为什么二级页面不能用透明容器：抽屉里的二级页面是以叠层方式盖在首页之上的，
+ * Scaffold 一旦 containerColor=Transparent，首页内容连同背景图会一起透上来，
+ * 二级页面的文字压在下层内容上完全糊成一团、无法单独阅读。
+ * 这里给它们铺一层和抽屉同源的实底渐变，视觉上与抽屉连贯，同时能独立显示。
+ *
+ * 用法：`Scaffold(modifier = Modifier.drawerGradientBackground(), containerColor = Color.Transparent, ...)`
+ * 注意必须先 Scaffold 的 containerColor 为透明，否则默认不透明 surface 会把渐变盖住。
+ */
+fun Modifier.drawerGradientBackground(): Modifier =
+    this.background(Brush.verticalGradient(BannerGradient))
 
 /** 预算卡圆形底：支出的 10% 淡红 */
 val ExpenseRedSoft = Color(0x1AE53935)

@@ -7,9 +7,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,6 +35,13 @@ import java.util.Calendar
 import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.formatTime
+import com.bookkeeping.app.theme.drawerGradientBackground
+import com.bookkeeping.app.outlinedOnGradient
+import com.bookkeeping.app.filterChipOnGradient
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.FilterChipDefaults
 
 
 // ─── 账单分期编辑器 ───────────────────────────────
@@ -111,9 +121,12 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
     }
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onBack,
@@ -145,7 +158,9 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
 
             if (!showPreview) {
                 // ── 账户 + 金额卡片 ──
+                // 卡片底色可能是半透明（跟随「卡片背景透明度」），内部文字统一压成白色
                 Card(shape = RoundedCornerShape(14.dp)) {
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
                     Column(Modifier.padding(14.dp)) {
                         Row(
                             Modifier
@@ -158,12 +173,12 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                             Text(
                                 selectedAccount?.let { "${it.icon} ${it.name}" } ?: "请选择账户",
                                 fontSize = 14.sp,
-                                color = if (selectedAccount == null) MaterialTheme.colorScheme.onSurfaceVariant
-                                else BlueColor
+                                color = if (selectedAccount == null) Color.White.copy(alpha = 0.75f)
+                                else Color.White
                             )
-                            Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("  ›", color = Color.White.copy(alpha = 0.75f))
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.35f))
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -175,10 +190,13 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                                     sanitizeAmountInput(v)?.let { amountText = it }
                                 },
                                 singleLine = true,
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.End),
+                                textStyle = TextStyle(fontSize = 14.sp, color = Color.White, textAlign = TextAlign.End),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = outlinedOnGradient(Color.White),
                                 modifier = Modifier.width(170.dp)
                             )
                         }
+                    }
                     }
                 }
 
@@ -189,12 +207,14 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     FilterChip(
                         selected = mode == InstallmentPlan.Mode.AUTO_TX,
                         onClick = { mode = InstallmentPlan.Mode.AUTO_TX },
-                        label = { Text("🔁 自动记账") }
+                        label = { Text("🔁 自动记账") },
+                        colors = filterChipOnGradient()
                     )
                     FilterChip(
                         selected = mode == InstallmentPlan.Mode.REMIND,
                         onClick = { mode = InstallmentPlan.Mode.REMIND },
-                        label = { Text("⏰ 账单提醒") }
+                        label = { Text("⏰ 账单提醒") },
+                        colors = filterChipOnGradient()
                     )
                 }
                 if (mode == InstallmentPlan.Mode.AUTO_TX) {
@@ -219,6 +239,9 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     onValueChange = { periodsText = it.filter { c -> c.isDigit() }.take(3) },
                     label = { Text("分期数") },
                     singleLine = true,
+                    textStyle = TextStyle(fontSize = 14.sp, color = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = outlinedOnGradient(Color.White),
                     modifier = Modifier.width(200.dp)
                 )
                 Spacer(Modifier.height(12.dp))
@@ -229,6 +252,9 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     },
                     label = { Text("手续费总额（可选）") },
                     singleLine = true,
+                    textStyle = TextStyle(fontSize = 14.sp, color = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = outlinedOnGradient(Color.White),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
@@ -238,12 +264,14 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     FilterChip(
                         selected = feeMode == InstallmentPlan.FeeMode.MONTHLY_AVG,
                         onClick = { feeMode = InstallmentPlan.FeeMode.MONTHLY_AVG },
-                        label = { Text("按月均摊") }
+                        label = { Text("按月均摊") },
+                        colors = filterChipOnGradient()
                     )
                     FilterChip(
                         selected = feeMode == InstallmentPlan.FeeMode.FIRST_PERIOD,
                         onClick = { feeMode = InstallmentPlan.FeeMode.FIRST_PERIOD },
-                        label = { Text("首期一次性") }
+                        label = { Text("首期一次性") },
+                        colors = filterChipOnGradient()
                     )
                 }
                 Spacer(Modifier.height(10.dp))
@@ -256,10 +284,19 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                         Text(
                             "仅影响欠款展示",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color.White.copy(alpha = 0.8f)
                         )
                     }
-                    Switch(checked = feeIntoDebt, onCheckedChange = { feeIntoDebt = it })
+                    Switch(
+                        checked = feeIntoDebt,
+                        onCheckedChange = { feeIntoDebt = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color.White.copy(alpha = 0.5f),
+                            uncheckedThumbColor = Color.White.copy(alpha = 0.7f),
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                        )
+                    )
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("余数计入", fontSize = 14.sp)
@@ -268,12 +305,14 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                     FilterChip(
                         selected = remainderInto == InstallmentPlan.RemainderTarget.FIRST,
                         onClick = { remainderInto = InstallmentPlan.RemainderTarget.FIRST },
-                        label = { Text("首期") }
+                        label = { Text("首期") },
+                        colors = filterChipOnGradient()
                     )
                     FilterChip(
                         selected = remainderInto == InstallmentPlan.RemainderTarget.LAST,
                         onClick = { remainderInto = InstallmentPlan.RemainderTarget.LAST },
-                        label = { Text("末期") }
+                        label = { Text("末期") },
+                        colors = filterChipOnGradient()
                     )
                 }
             } else {
@@ -293,10 +332,11 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                 Text(
                     "${selectedAccount?.name ?: ""} · 共$n 期",
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.White.copy(alpha = 0.85f)
                 )
                 Spacer(Modifier.height(8.dp))
                 Card(shape = RoundedCornerShape(14.dp)) {
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                         for (p in 1..n) {
                             val (principal, fee) = installmentPeriodAmounts(previewPlan, p)
@@ -312,7 +352,7 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                                         Text(
                                             formatTime(installmentDueDate(firstDate, p), "yyyy-MM-dd"),
                                             fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = Color.White.copy(alpha = 0.8f)
                                         )
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
@@ -320,22 +360,26 @@ internal fun InstallmentEditor(onBack: () -> Unit) {
                                             (principal + fee).formatAmount(),
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = DangerRed
+                                            color = Color(0xFFFF8A80)
                                         )
                                         if (fee > 0) Text(
                                             "本金${principal.formatAmount()} +费${fee.formatAmount()}",
                                             fontSize = 10.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = Color.White.copy(alpha = 0.8f)
                                         )
                                     }
                                 }
-                                if (p < n) HorizontalDivider()
+                                if (p < n) HorizontalDivider(color = Color.White.copy(alpha = 0.3f))
                             }
                         }
                     }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
-                TextButton(onClick = { showPreview = false }) { Text("‹ 返回修改") }
+                TextButton(
+                    onClick = { showPreview = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                ) { Text("‹ 返回修改") }
             }
             Spacer(Modifier.height(16.dp))
         }

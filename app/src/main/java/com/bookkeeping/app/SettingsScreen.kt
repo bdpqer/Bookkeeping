@@ -21,6 +21,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
+import com.bookkeeping.app.theme.AppDropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -69,6 +70,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 // ─── 设置（调试面板 + 权限检查） ──────────────────────────────
 
@@ -95,6 +98,8 @@ internal fun SettingsScreen(
     var bioEnabled by remember { mutableStateOf(com.bookkeeping.app.ui.isBiometricUnlockEnabled(context)) }
     var hasPin by remember { mutableStateOf(com.bookkeeping.app.ui.hasPinSet(context)) }
     var showPinSetup by remember { mutableStateOf(false) }
+    var showRecalcBalance by remember { mutableStateOf(false) }
+    var recalcResult by remember { mutableStateOf<List<Triple<String, Double, Double>>?>(null) }
     val canBiometric = remember { com.bookkeeping.app.ui.canAuthenticateBiometric(context) }
     // 这些交互状态提升到屏幕顶层：LazyColumn 的 item 滑出视口后会被回收，
     // remember 里的值随之销毁 —— 早先选好的账本、填了一半的预算滚出屏幕再回来就没了
@@ -249,6 +254,11 @@ internal fun SettingsScreen(
                     Spacer(Modifier.height(12.dp))
                     // ── 卡片背景透明度 ──
                     CardAlphaSection()
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // ── 卡片背景颜色 ──
+                    CardColorSection()
                 }
             }
         }
@@ -328,25 +338,32 @@ internal fun SettingsScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("账户管理", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                TextButton(onClick = {
-                    scope.launch {
-                        // Account.name 有唯一索引且 DAO 是 REPLACE：直接 insert 同名行会
-                        // 先把已有的「新账户」删掉再插入，旧 id 凭空消失，
-                        // 而 transactions.accountId 不会跟着更新 → 那些交易记账账户全变空白。
-                        // 这里先查重，名字已存在就往后加序号
-                        val dao = AppDatabase.getInstance(context).accountDao()
-                        val taken = dao.getAllIncludingDisabled().map { it.name }.toSet()
-                        var name = "新账户"
-                        var n = 2
-                        while (name in taken) { name = "新账户$n"; n++ }
-                        dao.insert(com.bookkeeping.app.data.entity.Account(
-                            name = name,
-                            type = com.bookkeeping.app.data.entity.Account.AccountType.OTHER,
-                            icon = "💰"
-                        ))
-                        loadAll()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 余额是增量累加出来的，历史上漏调/重复调用会留下永久偏差
+                    // （真机上出现过 -19 亿这种量级），这里给一个按现存交易整体重算的兜底入口
+                    TextButton(onClick = { showRecalcBalance = true }) {
+                        Text("按交易重算余额", fontSize = 12.sp)
                     }
-                }) { Text("+ 新增", fontSize = 12.sp) }
+                    TextButton(onClick = {
+                        scope.launch {
+                            // Account.name 有唯一索引且 DAO 是 REPLACE：直接 insert 同名行会
+                            // 先把已有的「新账户」删掉再插入，旧 id 凭空消失，
+                            // 而 transactions.accountId 不会跟着更新 → 那些交易记账账户全变空白。
+                            // 这里先查重，名字已存在就往后加序号
+                            val dao = AppDatabase.getInstance(context).accountDao()
+                            val taken = dao.getAllIncludingDisabled().map { it.name }.toSet()
+                            var name = "新账户"
+                            var n = 2
+                            while (name in taken) { name = "新账户$n"; n++ }
+                            dao.insert(com.bookkeeping.app.data.entity.Account(
+                                name = name,
+                                type = com.bookkeeping.app.data.entity.Account.AccountType.OTHER,
+                                icon = "💰"
+                            ))
+                            loadAll()
+                        }
+                    }) { Text("+ 新增", fontSize = 12.sp) }
+                }
             }
         }
         item {
@@ -481,7 +498,7 @@ internal fun SettingsScreen(
                             )
                             Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                         }
-                        DropdownMenu(expanded = budgetMenu, onDismissRequest = { budgetMenu = false }) {
+                        AppDropdownMenu(expanded = budgetMenu, onDismissRequest = { budgetMenu = false }) {
                             ledgers.forEach { led ->
                                 DropdownMenuItem(
                                     text = { Text("${led.icon} ${led.name}${if (led.isDefault) "（默认）" else ""}") },
@@ -679,6 +696,55 @@ internal fun SettingsScreen(
                 hasPin = true
                 com.bookkeeping.app.ui.setLockEnabled(context, true)
                 lockEnabled = true
+            }
+        )
+    }
+
+    if (showRecalcBalance) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRecalcBalance = false },
+            title = { Text("按交易重算余额", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "账户余额平时是随每笔交易增量累加的，一旦某条路径漏加或重复加减就会永久偏差。\n\n" +
+                    "重算会用「现存交易（不含回收站）」的收入 - 支出覆盖各账户余额，可修正这类偏差。\n\n" +
+                    "如果你给账户设过「期初余额」之类手工底数，重算会把它清掉。",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRecalcBalance = false
+                    scope.launch {
+                        val changed = withContext(Dispatchers.IO) {
+                            com.bookkeeping.app.recalcAllBalances(AppDatabase.getInstance(context))
+                        }
+                        loadAll()
+                        recalcResult = changed
+                    }
+                }) { Text("重算") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRecalcBalance = false }) { Text("取消") }
+            }
+        )
+    }
+
+    recalcResult?.let { changed ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { recalcResult = null },
+            title = { Text("重算完成", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    if (changed.isEmpty()) "各账户余额与交易一致，无需调整。"
+                    else changed.joinToString("\n") { (name, old, now) ->
+                        "$name：¥${old.formatAmount()} → ¥${now.formatAmount()}"
+                    },
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { recalcResult = null }) { Text("好") }
             }
         )
     }

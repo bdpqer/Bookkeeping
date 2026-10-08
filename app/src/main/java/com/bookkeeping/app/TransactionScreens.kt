@@ -18,9 +18,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
+import com.bookkeeping.app.theme.AppDropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +60,10 @@ import com.bookkeeping.app.theme.TransferOrange
 // ─── 待确认队列 ─────────────────────────────────────────────
 
 @Composable
-internal fun PendingScreen() {
+internal fun PendingScreen(
+    modifier: Modifier = Modifier,
+    onOverlayChanged: (Boolean) -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
@@ -70,7 +73,13 @@ internal fun PendingScreen() {
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
     var confirmingAll by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize()) {
+    // 编辑页打开期间通知外层：标题栏/底部导航栏/悬浮按钮让位（编辑页自己全屏铺满）
+    LaunchedEffect(editingTx != null) { onOverlayChanged(editingTx != null) }
+
+    // 外层 Box 不带 padding：编辑页要以全屏叠层方式盖在上面（铺满状态栏/导航栏），
+    // 一旦被外层 padding 包住就只能缩在内容区里。Tab 的 padding 由 [modifier] 传给内层 Column。
+    Box(Modifier.fillMaxSize()) {
+        Column(modifier.fillMaxSize()) {
         // 一键全部确认（含 loading 指示；大批量确认时按钮无响应易被误以为卡死）
         if (pending.isNotEmpty()) {
             Row(
@@ -112,14 +121,12 @@ internal fun PendingScreen() {
                 }
             } else {
                 items(pending, key = { it.id }) { tx ->
+                    // 与交易明细条目统一：默认容器色（跟随卡片透明度/颜色设置）+ 14dp 圆角 + 14dp 内边距
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { editingTx = tx },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Column(Modifier.padding(12.dp)) {
+                        Column(Modifier.padding(14.dp)) {
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -181,15 +188,21 @@ internal fun PendingScreen() {
             onDeleted = { editingTx = null }
         )
     }
+    }
 }
 
 // ─── 交易列表 ─────────────────────────────────────────────
 
 @Composable
-internal fun TransactionListScreen() {
+internal fun TransactionListScreen(
+    modifier: Modifier = Modifier,
+    onOverlayChanged: (Boolean) -> Unit = {}
+) {
     val context = LocalContext.current
     val db = remember { AppDatabase.getInstance(context) }
     var editingTx by remember { mutableStateOf<Transaction?>(null) }
+    // 编辑页打开期间通知外层：标题栏/底部导航栏/悬浮按钮让位（编辑页自己全屏铺满）
+    LaunchedEffect(editingTx != null) { onOverlayChanged(editingTx != null) }
     var keyword by remember { mutableStateOf("") }
     // 输入防抖：快速输入时合并末次，避免每敲一字就重建 Flow 查 Room
     var debouncedKeyword by remember { mutableStateOf(keyword) }
@@ -234,7 +247,9 @@ internal fun TransactionListScreen() {
         ledgers = withContext(Dispatchers.IO) { db.ledgerDao().getAll() }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // 外层 Box 不带 padding（理由同 PendingScreen）：编辑页要全屏铺满系统栏
+    Box(Modifier.fillMaxSize()) {
+        Column(modifier.fillMaxSize()) {
         // 当前筛选结果的汇总：支出 / 收入 / 结余（单次遍历 + remember，避免每次重组重复计算）
         val sums = remember(transactions) {
             var exp = 0.0
@@ -301,7 +316,7 @@ internal fun TransactionListScreen() {
                     Text(timeLabel, fontSize = 13.sp, color = BrandBlue)
                     Text(" ▾", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                DropdownMenu(expanded = timeMenu, onDismissRequest = { timeMenu = false }) {
+                AppDropdownMenu(expanded = timeMenu, onDismissRequest = { timeMenu = false }) {
                     DropdownMenuItem(
                         text = { Text("今天") },
                         onClick = { timeMode = RangeMode.TODAY; timeMenu = false }
@@ -388,6 +403,7 @@ internal fun TransactionListScreen() {
             onSaved = { editingTx = null },
             onDeleted = { editingTx = null }
         )
+    }
     }
 
     if (showMonthPicker) {

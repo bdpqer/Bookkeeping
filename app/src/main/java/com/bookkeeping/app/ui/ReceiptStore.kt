@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -133,7 +134,13 @@ fun ReceiptImage(file: File, modifier: Modifier = Modifier, big: Boolean = false
  * editTxId != null → 编辑模式（直接读写 {id}.jpg，即时生效）
  */
 @Composable
-fun ReceiptSection(editTxId: Long? = null) {
+fun ReceiptSection(
+    editTxId: Long? = null,
+    // 记一笔页面铺的是深色渐变背景（同二级页面），默认色在渐变上读不清，
+    // 由调用方传白色覆盖；编辑弹窗仍是浅色卡片底，保持默认即可
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    actionColor: Color = MaterialTheme.colorScheme.primary
+) {
     val context = LocalContext.current
     var version by remember { mutableStateOf(0) }
     var showFull by remember { mutableStateOf(false) }
@@ -163,7 +170,7 @@ fun ReceiptSection(editTxId: Long? = null) {
         Text(
             "凭证（小票/发票，可选）",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = labelColor
         )
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -180,12 +187,18 @@ fun ReceiptSection(editTxId: Long? = null) {
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            TextButton(onClick = { cameraLauncher.launch(cameraUri) }) { Text("📷 拍照") }
-            TextButton(onClick = {
-                pickerLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            }) { Text("🖼 相册") }
+            TextButton(
+                onClick = { cameraLauncher.launch(cameraUri) },
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = actionColor)
+            ) { Text("📷 拍照") }
+            TextButton(
+                onClick = {
+                    pickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = actionColor)
+            ) { Text("🖼 相册") }
             if (hasPhoto) {
                 TextButton(onClick = { targetFile.delete(); version++ }) {
                     Text("删除", color = DangerRed, fontSize = 12.sp)

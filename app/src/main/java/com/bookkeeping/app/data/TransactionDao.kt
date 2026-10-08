@@ -121,6 +121,21 @@ interface TransactionDao {
     """)
     suspend fun sumAmount(type: String, start: Long, end: Long): Double
 
+    /**
+     * 某账户「现存交易」对余额的净影响（收入 +、支出 -、转账 0），口径同
+     * [com.bookkeeping.app.balanceDelta]。用于按交易重算账户余额。
+     *
+     * 只统计 deletedAt = 0（回收站里的不算），含待确认 —— 与 applyBalance 在写入时
+     * 不区分 confirmed 的行为保持一致，否则重算会把待确认那部分又抹掉。
+     */
+    @Query("""
+        SELECT COALESCE(SUM(
+            CASE type WHEN 'INCOME' THEN amount WHEN 'EXPENSE' THEN -amount ELSE 0 END
+        ), 0.0)
+        FROM transactions WHERE accountId = :accountId AND deletedAt = 0
+    """)
+    suspend fun sumBalanceDelta(accountId: Long): Double
+
     @Update
     suspend fun update(tx: Transaction)
 

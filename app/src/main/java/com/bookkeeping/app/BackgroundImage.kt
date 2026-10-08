@@ -9,15 +9,23 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -121,12 +130,22 @@ fun AppBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit
         } else null
     }
 
-    // 遮罩随主题：亮色叠白、深色叠黑；alpha 0.60→0.42，图片清晰可见且前景文字可读
+    // 遮罩随主题：亮色叠白、深色叠黑。
+    // ⚠️ 深色模式必须把遮罩压得很重（近不透明），否则用户选的浅色背景图会透过
+    // 「半透明卡片」（卡片透明度功能）把整个深色主题洗成亮灰，白字 onSurface 压在上面
+    // 完全看不清（表现为"深色模式还有黑色文字"）。压暗到 ~0.85 后，卡片透出的是暗底。
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val scrimTop = if (darkTheme) Color.Black.copy(alpha = 0.58f) else Color.White.copy(alpha = 0.60f)
-    val scrimBottom = if (darkTheme) Color.Black.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.42f)
+    val scrimTop = if (darkTheme) Color.Black.copy(alpha = 0.86f) else Color.White.copy(alpha = 0.60f)
+    val scrimBottom = if (darkTheme) Color.Black.copy(alpha = 0.78f) else Color.White.copy(alpha = 0.42f)
 
-    Box(modifier = modifier.fillMaxSize()) {
+    // 底色层：edge-to-edge 后 App 内容会延伸到状态栏/导航栏后面，窗口背景必须自己铺。
+    // 不铺的话，系统栏后面露出的是 Window 默认底色（通常纯白），浅色还好，
+    // 深色模式顶部/底部会出现一条突兀的白边。用主题 background 色即可铺满并跟随深色模式。
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         val b = bitmap
         if (b != null) {
             Image(
@@ -154,6 +173,7 @@ fun AppBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit
  * 值实时写入 CardAlphaState（驱动 Theme 重组）+ 持久化到 SharedPreferences。
  * 透明度越低，背景图透过卡片越多；0% 时卡片底完全透明，只剩文字浮在背景上。
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CardAlphaSection() {
     val context = LocalContext.current
@@ -162,29 +182,78 @@ fun CardAlphaSection() {
     }
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
 
+    val primary = MaterialTheme.colorScheme.primary
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val trackHeight = 3.dp
+
     Column {
-        Text("卡片背景透明度", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Slider(
-                value = alpha,
-                onValueChange = { v ->
-                    alpha = v
-                    com.bookkeeping.app.theme.CardAlphaState.value = v
-                    prefs.edit().putFloat(com.bookkeeping.app.theme.CARD_ALPHA_KEY, v).apply()
-                },
-                valueRange = 0f..1f,
-                modifier = Modifier.weight(1f)
-            )
+        // 标题行 + 右侧实时百分比（圆角小徽章）
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("卡片背景透明度", fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Text(
                 "${(alpha * 100).toInt()}%",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(40.dp)
+                fontWeight = FontWeight.SemiBold,
+                color = primary,
+                modifier = Modifier
+                    .background(primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
             )
         }
+        Spacer(Modifier.height(6.dp))
+        // 细轨道滑块：自定义 track 压到 3dp（默认约 4dp），更精致
+        Slider(
+            value = alpha,
+            onValueChange = { v ->
+                alpha = v
+                com.bookkeeping.app.theme.CardAlphaState.value = v
+                prefs.edit().putFloat(com.bookkeeping.app.theme.CARD_ALPHA_KEY, v).apply()
+            },
+            valueRange = 0f..1f,
+            track = { sliderState ->
+                // ⚠️ 必须 fillMaxWidth：Canvas 没有固有尺寸，不给宽度会测成 0 宽 → 轨道完全不显示
+                androidx.compose.foundation.Canvas(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(trackHeight)
+                ) {
+                    val w = size.width
+                    val h = size.height
+                    val r = h / 2f
+                    // 未填充段
+                    drawRoundRect(
+                        color = surfaceVariant,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r)
+                    )
+                    // 已填充段（按当前进度）
+                    val frac = (sliderState.value - sliderState.valueRange.start) /
+                        (sliderState.valueRange.endInclusive - sliderState.valueRange.start)
+                    val fillW = w * frac
+                    if (fillW > 0f) {
+                        drawRoundRect(
+                            color = primary,
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, 0f),
+                            size = androidx.compose.ui.geometry.Size(fillW, h),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r)
+                        )
+                    }
+                }
+            },
+            colors = SliderDefaults.colors(
+                thumbColor = primary,
+                activeTrackColor = Color.Transparent,
+                inactiveTrackColor = Color.Transparent,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
         Text(
-            "调节权限状态/自动记账/外观这类灰白色卡片的底色透明度：100% 不透明，0% 完全透出背景图",
+            "调节卡片底色透明度：100% 不透明，0% 完全透出背景图",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -233,6 +302,72 @@ fun BackgroundPickerSection() {
         }
         Text(
             "从相册选择一张图片作为所有页面的背景，会叠加半透明遮罩保证文字清晰",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * 设置页「卡片背景颜色」区块：从预设色里选卡片底色（已排除黑白红绿蓝语义色）。
+ * 选「默认」恢复主题灰白；选其他色则覆盖所有 Card 的容器色，并与透明度 Slider 联动。
+ */
+@Composable
+fun CardColorSection() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var selected by remember {
+        mutableStateOf(com.bookkeeping.app.theme.CardColorState.value)
+    }
+
+    Column {
+        Text("卡片背景颜色", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(6.dp))
+        // 所有色块固定排一行（chunked 用总数 → 永不分行）。
+        // ⚠️ 宽度预算：可用约 310dp；8 个 @30dp + 间距 7dp = 289dp。加色时要同步缩小 size/spacedBy。
+        val options = com.bookkeeping.app.theme.CardColorOptions
+        val chunked = options.chunked(options.size)
+        chunked.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                row.forEach { opt ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier
+                                .size(30.dp)
+                                .background(
+                                    color = opt.color ?: MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .then(
+                                    if (selected == opt.color) Modifier.border(
+                                        width = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) else Modifier.border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                )
+                                .clickable {
+                                    selected = opt.color
+                                    com.bookkeeping.app.theme.CardColorState.value = opt.color
+                                    // -1L 表示默认（跟随主题），否则存 ARGB int（toArgb）
+                                    prefs.edit().putLong(
+                                        com.bookkeeping.app.theme.CARD_COLOR_KEY,
+                                        opt.color?.toArgb()?.toLong() ?: -1L
+                                    ).apply()
+                                }
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(opt.label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        Text(
+            "选择卡片底色（默认/浅色系），与上方透明度联动；已排除黑白红绿蓝等业务色",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

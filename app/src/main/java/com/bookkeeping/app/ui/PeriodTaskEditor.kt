@@ -1,5 +1,6 @@
 package com.bookkeeping.app.ui
 
+import com.bookkeeping.app.theme.AppDropdownMenu
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -28,6 +30,8 @@ import java.util.Calendar
 import com.bookkeeping.app.formatAmount
 import com.bookkeeping.app.theme.DangerRed
 import com.bookkeeping.app.formatTime
+import com.bookkeeping.app.theme.drawerGradientBackground
+import androidx.compose.foundation.layout.systemBars
 
 
 /** 两个时间戳是否为同一天（忽略时分秒），用于判断用户有没有改过首笔日期 */
@@ -130,9 +134,12 @@ internal fun PeriodTaskEditor(
     }
 
     Scaffold(
-        // 透明容器：透出全局自定义背景图
+        // 抽屉二级页面背景：与 ModalDrawerSheet 相同的竖向渐变（蓝→青→金）。
+        // 原先透明容器会透出下层首页内容，本页文字压在下层 UI 上糊成一团无法单独阅读。
+        modifier = Modifier.drawerGradientBackground(),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             DetailTopBar(
                 onBack = onBack,
@@ -259,7 +266,7 @@ internal fun PeriodTaskEditor(
                                         .fillMaxWidth()
                                         .clickable { catExpanded = true }
                                 )
-                                DropdownMenu(
+                                AppDropdownMenu(
                                     expanded = catExpanded,
                                     onDismissRequest = { catExpanded = false }
                                 ) {
@@ -439,17 +446,20 @@ internal fun SettingRow(
     value: String,
     onClick: () -> Unit
 ) {
+    // 卡片底色可能半透明（跟随「卡片背景透明度」），内部文字统一压成白色
     Card(shape = RoundedCornerShape(14.dp)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable { onClick() }
-                .padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            Text(value, fontSize = 14.sp, color = BlueColor)
-            Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CompositionLocalProvider(LocalContentColor provides Color.White) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick() }
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text(value, fontSize = 14.sp, color = Color.White)
+                Text("  ›", color = Color.White.copy(alpha = 0.75f))
+            }
         }
     }
 }

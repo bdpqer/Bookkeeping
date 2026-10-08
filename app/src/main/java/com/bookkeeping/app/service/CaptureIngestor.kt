@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.bookkeeping.app.FileLog
 import com.bookkeeping.app.checkBudgetAndNotify
+import com.bookkeeping.app.applyBalance
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Transaction
 import com.bookkeeping.app.parser.ParseEngine
@@ -88,6 +89,11 @@ object CaptureIngestor {
             "✅ [$logTag] 解析成功 → 入库 id=$id amt=${tx.amount} type=${tx.type} cat=${tx.category} conf=${tx.confidence}"
         )
         onInserted(tx, id)
+
+        // ⚠️ 自动记账也必须过 applyBalance：早先这里只 insert 不动余额，
+        // 于是自动捕获的每一笔都对余额「隐形」，而在编辑/删除时又会被
+        // reapplyBalance/revertBalance 冲回一次（那笔从未计入过）→ 余额凭空反向漂移。
+        applyBalance(db, tx)
 
         // 预算超支检查（每自然月最多提醒一次）
         checkBudgetAndNotify(context, ledgerId = tx.ledgerId)

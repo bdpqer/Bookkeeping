@@ -46,3 +46,36 @@ internal suspend fun reapplyBalance(db: AppDatabase, before: Transaction, after:
     revertBalance(db, before)
     applyBalance(db, after)
 }
+
+/**
+ * 按「现存交易」重算单个账户余额，返回重算后的值。
+ *
+ * 账户余额是增量累加出来的存量字段：任何一条路径漏调 applyBalance/revertBalance，
+ * 或者被重复调用（历史上出现过 -20 亿这种量级的漂移），差额都会永久留在库里，
+ * 靠后续记再多的账也对不回来。所以提供一次整体重算来兜底。
+ *
+ * accountId 为 null 的交易不归属任何账户，天然不参与（与 applyBalance 一致）。
+ */
+internal suspend fun recalcBalance(db: AppDatabase, accountId: Long): Double {
+    val correct = db.transactionDao().sumBalanceDelta(accountId)
+    db.accountDao().setBalance(accountId, correct)
+    return correct
+}
+
+/**
+ * 重算所有账户（含已停用）。返回「账户名 → (旧值, 新值)」的对照，
+ * 只含发生变化的那部分，供 UI 提示用户改了什么。
+ */
+internal suspend fun recalcAllBalances(db: AppDatabase): List<Triple<String, Double, Double>> {
+    val changed = mutableListOf<Triple<String, Double, Double>>()
+    db.accountDao().getAllIncludingDisabled().forEach { acc ->
+        val correct = db.transactionDao().sumBalanceDelta(acc.id)
+        // 浮点累加会有 1e-10 级误差，用 0.005（半分）作为「是否变化」的阈值
+        if (kotlin.math.abs(correct - acc.balance) > 0.005) {
+            db.accountDao().setBalance(acc.id, correct)
+            changed += Triple(acc.name, acc.balance, correct)
+        }
+    }
+    if (changed.isNotEmpty()) BookkeepingApp.notifyTransactionChanged()
+    return changed
+}

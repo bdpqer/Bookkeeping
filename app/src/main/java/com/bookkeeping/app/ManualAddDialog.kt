@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +32,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -53,6 +54,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +70,8 @@ import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.data.entity.Account
 import com.bookkeeping.app.data.entity.Ledger
 import com.bookkeeping.app.data.entity.Transaction
+import com.bookkeeping.app.theme.BrandBlue
+import com.bookkeeping.app.theme.drawerGradientBackground
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -230,45 +234,28 @@ fun ManualAddDialog(
     )
     val typeIndex = typeLabels.indexOfFirst { it.first == selectedType }.coerceAtLeast(0)
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    // 表单主体（两种容器共用）。渐变底是深蓝→青→金，直接压在背景上的文字统一用白色，
+    // 否则「未选中 Tab」「输入框标签」这类默认次要色在蓝段几乎看不出来。
+    val onGradient = Color.White
+    val body: @Composable (Modifier) -> Unit = { outerModifier ->
         Column(
-            Modifier
+            outerModifier
                 .fillMaxSize()
-                .then(
-                    if (embedded) Modifier.embeddedImePadding()
-                    else Modifier.statusBarsPadding().navigationBarsPadding().imePadding()
-                )
+                .imePadding()
         ) {
             LaunchedEffect(Unit) {
                 try { amountFocus.requestFocus() } catch (_: Exception) { }
             }
 
 
-            // ── 顶部导航栏：标题（返回键在底部，账本在下方账户区） ─-
-            Row(
-                Modifier.fillMaxWidth().height(48.dp), // 标题栏高度
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Filled.Edit,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "记一笔",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            // 标题与返回键统一由外层 DetailTopBar 承担（内嵌/独立同款）
 
             // ── 类型 Tab：支出/收入/转账（fixedCategory 时隐藏） ──
             if (!fixedCategory) {
                 TabRow(
                     selectedTabIndex = typeIndex,
                     containerColor = Color.Transparent,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
                     indicator = { tabPositions ->
                         if (typeIndex < tabPositions.size) {
                             TabRowDefaults.SecondaryIndicator(
@@ -291,7 +278,8 @@ fun ManualAddDialog(
                                     label,
                                     fontSize = 16.sp,
                                     fontWeight = if (selectedType == type) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedType == type) amountColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                    // 未选中项在渐变底上用白色（onSurfaceVariant 是灰的，蓝段几乎看不见）
+                                    color = if (selectedType == type) amountColor else onGradient
                                 )
                             }
                         )
@@ -308,12 +296,13 @@ fun ManualAddDialog(
             ) {
                 Spacer(Modifier.height(14.dp))
 
-                // 金额卡片
+                // 金额卡片：容器色取主题色槽（Theme 已按「卡片背景透明度」乘过 alpha），
+                // 不再写死 0.4 —— 否则设置页的透明度滑块对本页完全无效
                 Card(
                     Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Row(
@@ -346,7 +335,7 @@ fun ManualAddDialog(
                                             "0.00",
                                             fontSize = 34.sp, // 占位符字体大小
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                            color = amountColor.copy(alpha = 0.45f)
                                         )
                                     }
                                     inner()
@@ -367,10 +356,12 @@ fun ManualAddDialog(
                         categories = categories,
                         selectedCategory = selectedCategory,
                         onSelect = { selectedCategory = it },
-                        selectedContainer = amountColor.copy(alpha = 0.12f),
-                        unselectedContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        // 渐变底上：选中 = 实心白底 + 主色字；未选中 = 半透明白底 + 白字。
+                        // 原先未选中用 surfaceVariant（灰底灰字）压在渐变上几乎分不清格子边界
+                        selectedContainer = onGradient,
+                        unselectedContainer = onGradient.copy(alpha = 0.22f),
                         selectedContent = amountColor,
-                        unselectedContent = MaterialTheme.colorScheme.onSurface,
+                        unselectedContent = onGradient,
                         itemHeight = 42.dp,
                         hSpacing = 10.dp,
                         vSpacing = 10.dp,
@@ -381,12 +372,12 @@ fun ManualAddDialog(
 
                 Spacer(Modifier.height(6.dp)) // 分类选择与账户选择卡片间距
 
-                // 账户 / 账本选择卡片
+                // 账户 / 账本选择卡片（容器色同样跟随卡片透明度设置）
                 Card(
                     Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp)) {
@@ -401,7 +392,9 @@ fun ManualAddDialog(
                                 selectedAccountId = selectedAccountId,
                                 label = accountLabel,
                                 onSelect = { selectedAccountId = it },
-                                modifier = Modifier.padding(vertical = 12.dp)
+                                modifier = Modifier.padding(vertical = 12.dp),
+                                // 卡片透明度调到 0 时容器色全透，灰字会直接压在渐变上，统一白色
+                                contentColor = onGradient
                             )
                             if (ledgers.isNotEmpty()) {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -414,7 +407,8 @@ fun ManualAddDialog(
                                 selectedLedgerId = selectedLedgerId,
                                 onSelect = { selectedLedgerId = it },
                                 modifier = Modifier.padding(vertical = 12.dp),
-                                locked = forcedLedgerId != null
+                                locked = forcedLedgerId != null,
+                                contentColor = onGradient
                             )
                         }
                     }
@@ -422,13 +416,15 @@ fun ManualAddDialog(
 
                 Spacer(Modifier.height(12.dp))
 
+                // 输入框直接落在渐变背景上：文字/标签/边框/光标全部改白（默认次要色在蓝段读不清）
                 OutlinedTextField(
                     value = merchant,
                     onValueChange = { merchant = it },
                     label = { Text("商户/对方（可选）") },
                     singleLine = true,
-                    textStyle = TextStyle(fontSize = 14.sp),
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
                     shape = RoundedCornerShape(12.dp),
+                    colors = outlinedOnGradient(onGradient),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(2.dp)) // 商户/对方与备注间距
@@ -437,12 +433,17 @@ fun ManualAddDialog(
                     onValueChange = { note = it },
                     label = { Text("备注（可选）") },
                     singleLine = true,
-                    textStyle = TextStyle(fontSize = 14.sp),
+                    textStyle = TextStyle(fontSize = 14.sp, color = onGradient),
                     shape = RoundedCornerShape(12.dp),
+                    colors = outlinedOnGradient(onGradient),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp)) // 备注与收据间距
-                com.bookkeeping.app.ui.ReceiptSection(editTxId = null)
+                com.bookkeeping.app.ui.ReceiptSection(
+                    editTxId = null,
+                    labelColor = onGradient,
+                    actionColor = onGradient
+                )
                 Spacer(Modifier.height(12.dp)) // 收据与与底部按钮间距
             }
 
@@ -454,7 +455,9 @@ fun ManualAddDialog(
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f).height(44.dp),
-                    shape = RoundedCornerShape(22.dp)
+                    shape = RoundedCornerShape(22.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = onGradient),
+                    border = BorderStroke(1.dp, onGradient)
                 ) {
                     Text("返回", fontSize = 16.sp)
                 }
@@ -465,7 +468,9 @@ fun ManualAddDialog(
                     shape = RoundedCornerShape(22.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = amountColor,
-                        disabledContainerColor = amountColor.copy(alpha = 0.3f)
+                        contentColor = Color.White,
+                        disabledContainerColor = amountColor.copy(alpha = 0.3f),
+                        disabledContentColor = Color.White.copy(alpha = 0.7f)
                     )
                 ) {
                     Text("保存", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -473,4 +478,48 @@ fun ManualAddDialog(
             }
         }
     }
+
+    // 无论独立打开还是被二级页面内嵌调起，都铺满整屏渐变。
+    // ⚠️ 内嵌时不能只做「透明容器」：下层报销/周期任务页的顶栏和 Tab 会从透明容器里透出来，
+    // 与表单叠在一起（实测「待报销(0)/已报销(0)」和「记一笔」互相压字）。
+    // 铺自身渐变即可把下层内容完全遮住，同时与所有二级页面风格一致。
+    Scaffold(
+        modifier = Modifier.drawerGradientBackground(),
+        containerColor = Color.Transparent,
+        contentColor = androidx.compose.ui.graphics.Color.White,
+        contentWindowInsets = WindowInsets.systemBars,
+        topBar = {
+            DetailTopBar(
+                onBack = onDismiss,
+                title = { Text("记一笔", fontWeight = FontWeight.Bold) }
+            )
+        }
+    ) { padding -> body(Modifier.padding(padding)) }
 }
+
+/**
+ * 渐变背景（深蓝→青→金）上的 FilterChip 配色：
+ * 未选中 = 半透明白底 + 白字，选中 = 实心白底 + 品牌蓝字。
+ * 默认的 onSurfaceVariant 灰字压在蓝段上几乎看不见。
+ */
+@Composable
+internal fun filterChipOnGradient(fg: Color = Color.White) = FilterChipDefaults.filterChipColors(
+    selectedContainerColor = fg,
+    selectedLabelColor = BrandBlue,
+    containerColor = fg.copy(alpha = 0.22f),
+    labelColor = fg
+)
+
+/** 渐变背景上的 OutlinedTextField 配色：文字/标签/边框/光标统一白色 */
+@Composable
+internal fun outlinedOnGradient(fg: Color) = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = fg,
+    unfocusedTextColor = fg,
+    focusedLabelColor = fg,
+    unfocusedLabelColor = fg.copy(alpha = 0.85f),
+    focusedBorderColor = fg,
+    unfocusedBorderColor = fg.copy(alpha = 0.55f),
+    cursorColor = fg,
+    focusedPlaceholderColor = fg.copy(alpha = 0.7f),
+    unfocusedPlaceholderColor = fg.copy(alpha = 0.7f)
+)
