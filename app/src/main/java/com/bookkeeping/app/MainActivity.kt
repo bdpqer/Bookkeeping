@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +62,9 @@ import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.BookkeepingTheme
 import com.bookkeeping.app.theme.BrandBlue
 import com.bookkeeping.app.theme.DangerRed
+
+/** 悬浮记账按钮整体不透明度（固定值，不受「卡片背景透明度」滑块影响） */
+private const val FAB_ALPHA = 0.7f
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -336,6 +340,8 @@ private fun MainScaffold(
                                 dragY = (dragY + dragAmount.y).coerceIn(-maxDragY, 0f)
                             }
                         }
+                        // 悬浮按钮整体半透明：固定值，不跟随「卡片背景透明度」滑块
+                        .alpha(FAB_ALPHA)
                         .background(FabBg, RoundedCornerShape(20.dp))
                         .pointerInput(Unit) {
                             detectTapGestures(
