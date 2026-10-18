@@ -50,6 +50,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.bookkeeping.app.theme.SmsPurple
 import com.bookkeeping.app.data.AppDatabase
 import com.bookkeeping.app.sanitizeAmountInput
+import com.bookkeeping.app.formatTime
 import com.bookkeeping.app.service.CaptureLogBus
 import com.bookkeeping.app.service.NotificationCaptureService
 import com.bookkeeping.app.theme.ExpenseRed
@@ -711,7 +712,7 @@ internal fun SettingsScreen(
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "📱 实时捕获调试（${entries.size} 条）",
+                    "📱 实时捕获调试（${entries.size} 类 / ${entries.sumOf { it.count }} 条）",
                     fontWeight = FontWeight.Bold, fontSize = 14.sp
                 )
                 Spacer(Modifier.weight(1f))
@@ -948,8 +949,12 @@ private fun CaptureEntryRow(entry: CaptureLogBus.CaptureEntry) {
     val color = if (entry.source == "NOTIFICATION") TransferBlue else SmsPurple
     val label = if (entry.source == "NOTIFICATION") "📱" else "💬"
     val detail = (entry.packageName ?: entry.sender ?: "").take(20)
+    var expanded by remember(entry.uid) { mutableStateOf(false) }
 
-    Card(shape = RoundedCornerShape(8.dp)) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        modifier = if (entry.isAggregated) Modifier.clickable { expanded = !expanded } else Modifier
+    ) {
         Column(Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, fontSize = 12.sp)
@@ -957,6 +962,15 @@ private fun CaptureEntryRow(entry: CaptureLogBus.CaptureEntry) {
                 Text(entry.displayTime, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
                 Text(detail, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (entry.isAggregated) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "×${entry.count} 次 ▾",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = color
+                    )
+                }
             }
             Text(
                 entry.rawText.take(80),
@@ -965,6 +979,34 @@ private fun CaptureEntryRow(entry: CaptureLogBus.CaptureEntry) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp)
             )
+            // 聚合行才展示「首次 … 最近 …」，未聚合的保持原来一行简洁样式
+            if (entry.isAggregated) {
+                Text(
+                    "首次 ${entry.displayFirstTime} · 最近 ${entry.displayTime}",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            if (expanded && entry.history.isNotEmpty()) {
+                Text(
+                    "历史明细（最近 ${entry.history.size} 条）",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                entry.history.asReversed().forEach { (ts, raw) ->
+                    Text(
+                        "· ${formatTime(ts, "HH:mm:ss")}  ${raw.take(70)}",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
         }
     }
 }

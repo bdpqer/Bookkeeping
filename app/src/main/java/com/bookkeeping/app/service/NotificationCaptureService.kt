@@ -38,8 +38,53 @@ class NotificationCaptureService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val db by lazy { AppDatabase.getInstance(this) }
 
-    /** 通知侧内存去重：key=来源包|原文，3 分钟内同 key 视为同一通知重投，跳过入库 */
-    private val lastInsertedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /**
+     * 通知侧内存节流表。key 见 [throttleKey]，值为「上一次见到这条通知」的时间戳。
+     *
+     * 关键在于**查表通过即写入**（不论后续解析成功与否）：原先只在入库成功后落key，
+     * 导致解析永远失败的噪声（迅雷进度、USB 状态、NFC 提示…）永远不记 key，
+     * 每 10 秒重投就完整重跑一遍五级正则，并往 service.log 再写两行。
+     */
+    private val lastSeenAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** 节流窗口：同一归一化键在该窗口内只处理一次 */
+    private val THROTTLE_WINDOW_MS = 3 * 60 * 1000L
+
+    /**
+     * 解析规则版本号。用户改任何解析规则后自增，节流键随之失效，
+     * 避免「新规则已保存、但同一条通知因命中 3 分钟内的旧键而被跳过」。
+     */
+    @Volatile private var ruleVersion = 0
+
+    /**
+     * 节流键 =来源包 | 规则版本 | 归一化文本。
+     *
+     * 归一化把文本里的数字（含小数）统一替换成 `#`：迅雷的
+     * 「3个任务正在下载（总速度:48KB/s）/ 47 / 49…」26 种字面因此塌成同一个键，
+     * 否则动态文本每次都是新键，节流完全失效。
+     *
+     * ⚠️ 归一化结果**仅用于建键**，解析与入库仍使用原始 rawText。
+     */
+    private fun throttleKey(pkg: String, rawText: String): String {
+        val norm = NORMALIZE_DIGITS.replace(rawText, "#")
+        return "$pkg|$ruleVersion|$norm"
+    }
+
+    /** 把连续数字（含小数）替换为单个 #，缓存该正则避免每条通知重建 */
+    private val NORMALIZE_DIGITS = Regex("\\d+(?:[.,]\\d+)?")
+
+    /** 清除已超出窗口的节流记录，返回被移除条数。容量兜底，防止噪声把表撑爆 */
+    private fun evictStale(now: Long): Int {
+        val it = lastSeenAt.entries.iterator()
+        var removed = 0
+        while (it.hasNext()) {
+            if (now - it.next().value > THROTTLE_WINDOW_MS) {
+                it.remove()
+                removed++
+            }
+        }
+        return removed
+    }
 
     /**
      * 自动记账总开关缓存。原先每次 onNotificationPosted（主线程）都读 SharedPreferences，
@@ -52,7 +97,13 @@ class NotificationCaptureService : NotificationListenerService() {
         scope.launch {
             RuleEngineCache.refresh(this@NotificationCaptureService)
             autoCaptureEnabled = readAutoCaptureEnabled()
-            fileLog("🔄 规则与开关状态已刷新，自动记账=${if (autoCaptureEnabled) "开" else "关"}")
+            // 规则变了 → 版本自增 → 所有历史节流键自动失效，新规则立刻生效
+            ruleVersion++
+            lastSeenAt.clear()
+            fileLog(
+                "🔄 规则与开关状态已刷新，自动记账=${if (autoCaptureEnabled) "开" else "关"}，" +
+                    "规则版本=$ruleVersion"
+            )
         }
     }
 
@@ -163,21 +214,25 @@ class NotificationCaptureService : NotificationListenerService() {
 
         val fullDump = dumpAllExtras(extras, pkg)
 
-        // 文件日志只留一行摘要防膨胀；完整 extras dump 仍进 CaptureLogBus 供调试面板查看
-        fileLog("🎯 onNotificationPosted pkg=$pkg text=${rawText.take(200)}")
-
         // ─── 解析 + 入库 ────────────────────────────────────────
         scope.launch {
-            // 通知侧内存去重：同一通知常被系统重投/多实例下发（不同 postTime），
-            // 解析出的 merchant 可能不一致导致 SQL 去重漏放，
-            // 这里按「来源包 + 全文」再拦一道（3 分钟窗口）。
-            val dupKey = "$pkg|$rawText"
+            // 同一通知常被系统重投/多实例下发（不同 postTime），解析出的 merchant
+            // 可能不一致导致 SQL 去重漏放，这里按「来源包 + 归一化文本」再拦一道。
+            val throttleKey = throttleKey(pkg, rawText)
             val now = System.currentTimeMillis()
-            val lastTs = lastInsertedAt[dupKey]
-            if (lastTs != null && now - lastTs < 3 * 60 * 1000L) {
-                fileLog("⏭️ 3分钟内同来源同内容重复跳过 pkg=$pkg")
+            val lastTs = lastSeenAt[throttleKey]
+            if (lastTs != null && now - lastTs < THROTTLE_WINDOW_MS) {
                 return@launch
             }
+            // 查表通过即落键（不论后面解析成败）：噪声靠这一行不再重复跑正则。
+            // 成功后重复入库已由 findDuplicate（金额/类型/商户/时间窗）负责拦截。
+            lastSeenAt[throttleKey] = now
+            evictStale(now)
+
+            // 文件日志只留一行摘要防膨胀；完整 extras dump 仍进 CaptureLogBus 供调试面板查看。
+            // 放在节流之后：被节流拦下的重投不再写这一行，否则 39% 的日志一行都减不掉。
+            fileLog("🎯 onNotificationPosted pkg=$pkg text=${rawText.take(200)}")
+
             val id = CaptureIngestor.ingest(
                 context = this@NotificationCaptureService,
                 db = db,
@@ -198,18 +253,8 @@ class NotificationCaptureService : NotificationListenerService() {
                 // 刷新桌面 Widget（走 await + 真实 id 的可靠刷新，避开 Glance updateAll 异步节流）
                 com.bookkeeping.app.BookkeepingApp.instance.requestWidgetRefresh()
             }
-            if (id != null) {
-                lastInsertedAt[dupKey] = now
-                // 容量保护：清掉 3 分钟窗口外的记录。
-                // 原来只在「清理后仍 > 200」时才做，3 分钟内涌入超过 200 条时上限形同虚设，
-                // 改为每次插入后都检查一次。
-                if (lastInsertedAt.size > 200) {
-                    val it = lastInsertedAt.entries.iterator()
-                    while (it.hasNext()) {
-                        if (now - it.next().value > 3 * 60 * 1000L) it.remove()
-                    }
-                }
-            }
+            // 入库结果（成功 id / 解析失败 null / 命中重复 null）不再影响节流表：
+            // 节流只负责「同一通知别重复处理」，去重交给 SQL 层的 findDuplicate。
         }
 
         val entry = CaptureLogBus.CaptureEntry(
