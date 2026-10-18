@@ -24,4 +24,8 @@ interface InstallmentDao {
 
     @Query("DELETE FROM installment_plans WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** 账本级联删除。ledgerId 可空，所以要同时覆盖 NULL（无账本的分期不归任何账本，保留） */
+    @Query("DELETE FROM installment_plans WHERE ledgerId = :ledgerId")
+    suspend fun deleteByLedger(ledgerId: Long)
 }

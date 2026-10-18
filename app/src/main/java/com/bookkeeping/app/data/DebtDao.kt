@@ -40,4 +40,8 @@ interface DebtDao {
 
     @Query("DELETE FROM debts WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** 账本级联删除：清掉该账本名下的借贷记录，避免留下查无此账的悬空外键 */
+    @Query("DELETE FROM debts WHERE ledgerId = :ledgerId")
+    suspend fun deleteByLedger(ledgerId: Long)
 }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.bookkeeping.app.data.entity.Ledger
 
 @Dao
@@ -15,8 +16,15 @@ interface LedgerDao {
     @Query("DELETE FROM ledgers WHERE id = :id")
     suspend fun delete(id: Long)
 
+    /** 重命名 / 换图标。name 上有唯一索引，重名会直接抛 SQLiteConstraintException，调用方需先校验 */
+    @Update
+    suspend fun update(ledger: Ledger)
+
     @Query("SELECT * FROM ledgers ORDER BY isDefault DESC, id ASC")
     suspend fun getAll(): List<Ledger>
+
+    @Query("SELECT * FROM ledgers WHERE id = :id")
+    suspend fun getById(id: Long): Ledger?
 
     @Query("SELECT * FROM ledgers WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefault(): Ledger?

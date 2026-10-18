@@ -86,6 +86,12 @@ fun RecycleBinScreen(onClose: () -> Unit) {
             // 从回收站恢复 = 这笔钱重新入账，余额要重新计入
             withContext(Dispatchers.IO) {
                 db.transactionDao().restore(tx.id)
+                // 账本可能已被删除（账本级联删除会把它的交易整本扫进回收站），
+                // 或历史上就没有关联。带着悬空 ledgerId 回到明细里会「查无此账」，
+                // 所以恢复前先把它归到默认账本。
+                val fallback = db.ledgerDao().getDefault()?.id
+                    ?: db.ledgerDao().getAll().firstOrNull()?.id
+                if (fallback != null) db.transactionDao().fixLedgerIfOrphan(tx.id, fallback)
                 applyBalance(db, tx)
             }
             reload()

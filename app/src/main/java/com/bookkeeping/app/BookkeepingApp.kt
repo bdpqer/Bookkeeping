@@ -40,6 +40,7 @@ class BookkeepingApp : Application() {
         seedDefaultsIfNeeded()
         seedMerchantRulesIfNeeded()
         fixLegacyAssociations()
+        fixOrphanLedgers()
         migrateLegacyBudgetPrefs()
         RecurringWorker.triggerNow(this)
         AutoBackupWorker.ensureScheduled(this)
@@ -174,6 +175,16 @@ class BookkeepingApp : Application() {
             fixNullLedgerTransactions(AppDatabase.getInstance(this@BookkeepingApp))
         } catch (e: Exception) {
             Log.e(TAG, "fixLegacyAssociations failed", e)
+        }
+    }
+
+    /** 历史数据修复：旧版本删账本不级联交易留下的孤儿记录，启动时归入默认账本 */
+    private fun fixOrphanLedgers() = launchIo("fixOrphanLedgers") {
+        try {
+            val n = fixOrphanLedgerTransactions(AppDatabase.getInstance(this@BookkeepingApp))
+            if (n > 0) Log.d(TAG, "✅ 已把 $n 笔孤儿交易归入默认账本（原账本已被删除）")
+        } catch (e: Exception) {
+            Log.e(TAG, "fixOrphanLedgers failed", e)
         }
     }
 

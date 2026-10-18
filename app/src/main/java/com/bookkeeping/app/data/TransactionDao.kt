@@ -156,12 +156,50 @@ interface TransactionDao {
     @Query("UPDATE transactions SET deletedAt = :ts WHERE id = :id")
     suspend fun softDelete(id: Long, ts: Long)
 
+    // ── 账本级联删除（删除账本时一并处理其名下交易）────────────────
+
+    /** 该账本下现存交易笔数（不含回收站）：删除账本前的提示文案用 */
+    @Query("SELECT COUNT(*) FROM transactions WHERE ledgerId = :ledgerId AND deletedAt = 0")
+    suspend fun countByLedger(ledgerId: Long): Int
+
+    /** 取出该账本下所有现存交易：级联软删时需要逐笔冲回账户余额 */
+    @Query("SELECT * FROM transactions WHERE ledgerId = :ledgerId AND deletedAt = 0")
+    suspend fun getLiveByLedger(ledgerId: Long): List<Transaction>
+
+    /**
+     * 整本软删（进回收站，不物理删除，与编辑弹窗删除同一口径）。
+     * 调用方必须对 [getLiveByLedger] 的每笔调 revertBalance，否则账户余额只减不增。
+     */
+    @Query("UPDATE transactions SET deletedAt = :ts WHERE ledgerId = :ledgerId AND deletedAt = 0")
+    suspend fun softDeleteByLedger(ledgerId: Long, ts: Long)
+
+    /**
+     * 回收站恢复前的兜底：账本可能已被删除（或历史上就没有关联），
+     * 此时把交易归入默认账本，避免它带着悬空 ledgerId 回到明细里「查无此账」。
+     */
+    @Query("""
+        UPDATE transactions SET ledgerId = :fallbackId
+        WHERE id = :id AND (ledgerId IS NULL OR ledgerId NOT IN (SELECT id FROM ledgers))
+    """)
+    suspend fun fixLedgerIfOrphan(id: Long, fallbackId: Long)
+
     @Query("UPDATE transactions SET deletedAt = 0 WHERE id = :id")
     suspend fun restore(id: Long)
 
     /** 历史数据修复：无账本关联的交易归入默认账本（账户缺失时补第一个账户） */
     @Query("UPDATE transactions SET ledgerId = :ledgerId, accountId = COALESCE(accountId, :accountId) WHERE ledgerId IS NULL AND deletedAt = 0")
     suspend fun fixNullAssociations(ledgerId: Long, accountId: Long?)
+
+    /**
+     * 历史数据修复：把「账本已被删除」留下的孤儿交易归入默认账本。
+     * 旧版本删账本只删 ledgers 行，交易还挂着那个 ledgerId —— 明细里看着还在，
+     * 按账本筛选却永远查不到。返回修复条数。
+     */
+    @Query("""
+        UPDATE transactions SET ledgerId = :ledgerId
+        WHERE ledgerId IS NOT NULL AND ledgerId NOT IN (SELECT id FROM ledgers)
+    """)
+    suspend fun fixOrphanAssociations(ledgerId: Long): Int
 
     @Query("DELETE FROM transactions WHERE id = :id AND deletedAt > 0")
     suspend fun purge(id: Long)

@@ -25,3 +25,16 @@ internal suspend fun fixNullLedgerTransactions(db: AppDatabase) {
     val accounts = db.accountDao().getAll()
     db.transactionDao().fixNullAssociations(defaultLedgerId, accounts.firstOrNull()?.id)
 }
+
+/**
+ * 历史数据修复：账本已被删除、交易还挂着那个 ledgerId 的孤儿记录，启动时幂等归入默认账本。
+ *
+ * 旧版本删除账本只删了 ledgers 一行，没动 transactions，于是这些交易在明细列表里照常显示，
+ * 但按账本筛选永远查不到、报表也归属不明 —— 就是「删了账本明细还在」的成因。
+ * 现在删除路径已改为级联（见 LedgerOps.deleteLedgerCascade），这里只收拾存量。
+ */
+internal suspend fun fixOrphanLedgerTransactions(db: AppDatabase): Int {
+    val ledgers = db.ledgerDao().getAll()
+    val defaultLedgerId = ledgers.firstOrNull { it.isDefault }?.id ?: ledgers.firstOrNull()?.id ?: return 0
+    return db.transactionDao().fixOrphanAssociations(defaultLedgerId)
+}

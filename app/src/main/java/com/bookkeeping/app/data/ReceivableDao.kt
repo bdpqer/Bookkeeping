@@ -24,4 +24,8 @@ interface ReceivableDao {
 
     @Query("UPDATE receivables SET status = 'DONE' WHERE id = :id")
     suspend fun markDone(id: Long)
+
+    /** 账本级联删除：待报销 / 待回款都存这张表 */
+    @Query("DELETE FROM receivables WHERE ledgerId = :ledgerId")
+    suspend fun deleteByLedger(ledgerId: Long)
 }

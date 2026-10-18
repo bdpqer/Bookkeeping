@@ -108,6 +108,11 @@ internal fun SettingsScreen(
     var budgetLedgerId by remember { mutableStateOf<Long?>(null) }
     var budgetMenu by remember { mutableStateOf(false) }
     var rulesExpanded by remember { mutableStateOf(false) }
+    // 账本重命名 / 级联删除的对话框目标。放屏幕顶层，避免 LazyColumn 回收 item 后状态丢失
+    var renameTarget by remember { mutableStateOf<com.bookkeeping.app.data.entity.Ledger?>(null) }
+    var deleteTarget by remember { mutableStateOf<com.bookkeeping.app.data.entity.Ledger?>(null) }
+    var deleteTxCount by remember { mutableStateOf(0) }
+    var ledgerResultMsg by remember { mutableStateOf<String?>(null) }
 
     fun loadAll() {
         scope.launch {
@@ -493,11 +498,17 @@ internal fun SettingsScreen(
                                         }
                                     }) { Text("设为默认", fontSize = 12.sp) }
                                 }
+                                TextButton(onClick = { renameTarget = led }) {
+                                    Text("重命名", fontSize = 12.sp)
+                                }
                                 TextButton(onClick = {
                                     scope.launch {
-                                        AppDatabase.getInstance(context).ledgerDao().delete(led.id)
-                                        AppDatabase.getInstance(context).budgetDao().deleteByLedger(led.id)
-                                        loadAll()
+                                        // 先数出该账本下有多少笔现存交易，删除确认框里要写清楚影响
+                                        deleteTxCount = withContext(Dispatchers.IO) {
+                                            AppDatabase.getInstance(context)
+                                                .transactionDao().countByLedger(led.id)
+                                        }
+                                        deleteTarget = led
                                     }
                                 }) { Text("删除", color = DangerRed, fontSize = 12.sp) }
                             }
@@ -784,7 +795,127 @@ internal fun SettingsScreen(
             }
         )
     }
+
+    // ── 账本重命名 ──────────────────────────────────────────────
+    renameTarget?.let { target ->
+        var newName by remember(target.id) { mutableStateOf(target.name) }
+        var newIcon by remember(target.id) { mutableStateOf(target.icon) }
+        var nameError by remember(target.id) { mutableStateOf(false) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名账本", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it; nameError = false },
+                        singleLine = true,
+                        label = { Text("账本名称") },
+                        isError = nameError,
+                        supportingText = if (nameError) {
+                            { Text("名称不能为空，也不能与已有账本重名", fontSize = 11.sp) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text("图标", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                    // 常用图标两行排布：emoji 不好手输，点选即可
+                    LEDGER_ICONS.chunked(4).forEach { rowIcons ->
+                        Row {
+                            rowIcons.forEach { ic ->
+                                TextButton(
+                                    onClick = { newIcon = ic },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                                    modifier = Modifier.width(64.dp)
+                                ) {
+                                    Text(
+                                        ic,
+                                        fontSize = if (ic == newIcon) 22.sp else 18.sp,
+                                        color = if (ic == newIcon) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            renameLedger(AppDatabase.getInstance(context), target, newName, newIcon)
+                        }
+                        if (ok) {
+                            val finalName = newName.trim()
+                            renameTarget = null
+                            loadAll()
+                            ledgerResultMsg = "账本已重命名为「$finalName」"
+                        } else {
+                            nameError = true
+                        }
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 删除账本（级联，需明确告知影响面）──────────────────────
+    deleteTarget?.let { target ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除账本", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "即将删除「${target.name}」，并一并处理它名下的数据：\n\n" +
+                    "· $deleteTxCount 笔交易 → 进回收站，30 天内可恢复；相关账户余额会同步冲回\n" +
+                    "· 该账本的预算、借贷、待报销 / 待回款、账单分期 → 直接删除，无法恢复" +
+                    (if (target.isDefault) "\n\n它是默认账本，删除后会自动把剩下的第一个账本设为默认。" else ""),
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            deleteLedgerCascade(AppDatabase.getInstance(context), target.id)
+                        }
+                        deleteTarget = null
+                        loadAll()
+                        ledgerResultMsg = buildString {
+                            append("已删除账本「${target.name}」")
+                            if (result.deletedTxCount > 0) {
+                                append("，${result.deletedTxCount} 笔交易已进回收站")
+                            }
+                            result.newDefaultName?.let { append("；默认账本改为「$it」") }
+                        }
+                    }
+                }) { Text("删除", color = DangerRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    ledgerResultMsg?.let { msg ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ledgerResultMsg = null },
+            title = { Text("账本", fontWeight = FontWeight.Bold) },
+            text = { Text(msg, fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = { ledgerResultMsg = null }) { Text("好") }
+            }
+        )
+    }
 }
+
+/** 账本重命名对话框里可点选的图标 */
+private val LEDGER_ICONS = listOf("📒", "💼", "✈️", "🏠", "🍜", "🚗", "🎁", "💰")
 
 @Composable
 private fun PermissionRow(
